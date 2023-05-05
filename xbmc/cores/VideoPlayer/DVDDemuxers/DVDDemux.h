@@ -32,6 +32,7 @@ class IAddonProvider;
 extern "C"
 {
 #include <libavcodec/avcodec.h>
+#include <libavutil/dovi_meta.h>
 #include <libavutil/mastering_display_metadata.h>
 }
 
@@ -47,7 +48,8 @@ enum StreamType
   STREAM_DATA, // data stream
   STREAM_SUBTITLE, // subtitle stream
   STREAM_TELETEXT, // Teletext data stream
-  STREAM_RADIO_RDS // Radio RDS data stream
+  STREAM_RADIO_RDS, // Radio RDS data stream
+  STREAM_AUDIO_ID3 // Audio ID3 data stream
 };
 
 enum StreamSource
@@ -74,7 +76,6 @@ public:
     uniqueId = 0;
     dvdNavId = 0;
     demuxerId = -1;
-    codec = (AVCodecID)0; // AV_CODEC_ID_NONE
     codec_fourcc = 0;
     profile = FF_PROFILE_UNKNOWN;
     level = FF_LEVEL_UNKNOWN;
@@ -82,21 +83,21 @@ public:
     source = STREAM_SOURCE_NONE;
     iDuration = 0;
     pPrivate = NULL;
-    ExtraData = NULL;
     ExtraSize = 0;
     disabled = false;
     changes = 0;
     flags = StreamFlags::FLAG_NONE;
   }
 
-  virtual ~CDemuxStream() { delete[] ExtraData; }
+  virtual ~CDemuxStream() = default;
+  CDemuxStream(CDemuxStream&&) = default;
 
   virtual std::string GetStreamName();
 
   int uniqueId; // unique stream id
   int dvdNavId;
   int64_t demuxerId; // id of the associated demuxer
-  AVCodecID codec;
+  AVCodecID codec = AV_CODEC_ID_NONE;
   unsigned int codec_fourcc; // if available
   int profile; // encoder profile of the stream reported by the decoder. used to qualify hw decoders.
   int level; // encoder level of the stream reported by the decoder. used to qualify hw decoders.
@@ -105,7 +106,7 @@ public:
 
   int iDuration; // in mseconds
   void* pPrivate; // private pointer for the demuxer
-  uint8_t* ExtraData; // extra data for codec to use
+  std::unique_ptr<uint8_t[]> ExtraData; // extra data for codec to use
   unsigned int ExtraSize; // size of extra data
 
   StreamFlags flags;
@@ -150,6 +151,7 @@ public:
 
   std::string stereo_mode; // expected stereo mode
   StreamHdrType hdr_type = StreamHdrType::HDR_TYPE_NONE; // type of HDR for this stream (hdr10, etc)
+  AVDOVIDecoderConfigurationRecord dovi{};
 };
 
 class CDemuxStreamAudio : public CDemuxStream
@@ -198,6 +200,12 @@ public:
   {
     type = STREAM_TELETEXT;
   }
+};
+
+class CDemuxStreamAudioID3 : public CDemuxStream
+{
+public:
+  CDemuxStreamAudioID3() : CDemuxStream() { type = STREAM_AUDIO_ID3; }
 };
 
 class CDemuxStreamRadioRDS : public CDemuxStream
@@ -349,7 +357,7 @@ public:
    * sets desired width / height for video stream
    * adaptive demuxers like DASH can use this to choose best fitting video stream
    */
-  virtual void SetVideoResolution(int width, int height) {}
+  virtual void SetVideoResolution(unsigned int width, unsigned int height) {}
 
   /*
   * return the id of the demuxer

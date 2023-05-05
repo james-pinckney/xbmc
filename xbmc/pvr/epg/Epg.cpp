@@ -19,6 +19,7 @@
 #include "settings/AdvancedSettings.h"
 #include "settings/Settings.h"
 #include "settings/SettingsComponent.h"
+#include "utils/StringUtils.h"
 #include "utils/log.h"
 
 #include <memory>
@@ -391,9 +392,6 @@ bool CPVREpg::UpdateFromScraper(time_t start, time_t end, bool bForceUpdate)
   }
   else if (m_strScraperName == "client")
   {
-    if (!CServiceBroker::GetPVRManager().EpgsCreated())
-      return false;
-
     if (!m_channelData->IsEPGEnabled() || m_channelData->IsHidden())
     {
       // ignore. not interested in any updates.

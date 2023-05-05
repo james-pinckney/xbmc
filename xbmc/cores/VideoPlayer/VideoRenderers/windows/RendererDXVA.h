@@ -13,7 +13,11 @@
 #include <map>
 
 #include <d3d11_4.h>
+
+extern "C"
+{
 #include <libavutil/pixfmt.h>
+}
 
 enum RenderMethod;
 
@@ -24,7 +28,7 @@ public:
   ~CRendererDXVA() = default;
 
   CRenderInfo GetRenderInfo() override;
-  bool Supports(ESCALINGMETHOD method) override;
+  bool Supports(ESCALINGMETHOD method) const override;
   bool WantsDoublePass() override { return true; }
   bool Configure(const VideoPicture& picture, float fps, unsigned orientation) override;
   bool NeedBuffer(int idx) override;

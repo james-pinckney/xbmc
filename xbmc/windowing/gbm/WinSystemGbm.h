@@ -24,6 +24,10 @@ class IDispResource;
 
 namespace KODI
 {
+namespace UTILS
+{
+class CDisplayInfo;
+}
 namespace WINDOWING
 {
 namespace GBM
@@ -33,7 +37,7 @@ class CWinSystemGbm : public CWinSystemBase
 {
 public:
   CWinSystemGbm();
-  ~CWinSystemGbm() override = default;
+  ~CWinSystemGbm() override;
 
   const std::string GetName() override { return "gbm"; }
 
@@ -56,6 +60,10 @@ public:
   bool Show(bool raise = true) override;
   void Register(IDispResource* resource) override;
   void Unregister(IDispResource* resource) override;
+
+  bool SetHDR(const VideoPicture* videoPicture) override;
+  bool IsHDRDisplay() override;
+  CHDRCapabilities GetDisplayHDRCapabilities() const override;
 
   std::shared_ptr<CVideoLayerBridge> GetVideoLayerBridge() const { return m_videoLayerBridge; }
   void RegisterVideoLayerBridge(std::shared_ptr<CVideoLayerBridge> bridge)
@@ -83,8 +91,13 @@ protected:
   bool m_dispReset = false;
   XbmcThreads::EndTime<> m_dispResetTimer;
   std::unique_ptr<CLibInputHandler> m_libinput;
+
+private:
+  uint32_t m_hdr_blob_id = 0;
+
+  std::unique_ptr<UTILS::CDisplayInfo> m_info;
 };
 
 }
 }
-}
+} // namespace KODI

@@ -275,7 +275,7 @@ namespace XBMCAddon
       if (lowerKey == "startoffset")
       { // special case for start offset - don't actually store in a property,
         // we store it in item.m_lStartOffset instead
-        value = StringUtils::Format("{:f}", CUtil::ConvertMilliSecsToSecs(item->m_lStartOffset));
+        value = StringUtils::Format("{:f}", CUtil::ConvertMilliSecsToSecs(item->GetStartOffset()));
       }
       else if (lowerKey == "totaltime")
       {
@@ -901,17 +901,13 @@ namespace XBMCAddon
     xbmc::InfoTagPicture* ListItem::getPictureInfoTag()
     {
       XBMCAddonUtils::GuiLock lock(languageHook, m_offscreen);
-      if (item->HasPictureInfoTag())
-        return new xbmc::InfoTagPicture(item->GetPictureInfoTag(), m_offscreen);
-      return new xbmc::InfoTagPicture();
+      return new xbmc::InfoTagPicture(item->GetPictureInfoTag(), m_offscreen);
     }
 
     xbmc::InfoTagGame* ListItem::getGameInfoTag()
     {
       XBMCAddonUtils::GuiLock lock(languageHook, m_offscreen);
-      if (item->HasGameInfoTag())
-        return new xbmc::InfoTagGame(item->GetGameInfoTag(), m_offscreen);
-      return new xbmc::InfoTagGame();
+      return new xbmc::InfoTagGame(item->GetGameInfoTag(), m_offscreen);
     }
 
     std::vector<std::string> ListItem::getStringArray(const InfoLabelValue& alt,
@@ -1015,7 +1011,7 @@ namespace XBMCAddon
     void ListItem::setStartOffsetRaw(double startOffset)
     {
       // we store the offset in frames, or 1/75th of a second
-      item->m_lStartOffset = CUtil::ConvertSecsToMilliSecs(startOffset);
+      item->SetStartOffset(CUtil::ConvertSecsToMilliSecs(startOffset));
     }
 
     void ListItem::setMimeTypeRaw(const std::string& mimetype)

@@ -13,7 +13,11 @@
 #include <map>
 
 #include <d3d11_4.h>
+
+extern "C"
+{
 #include <libavutil/pixfmt.h>
+}
 
 #define PLANE_Y 0
 #define PLANE_U 1
@@ -28,7 +32,7 @@ class CRendererShaders : public CRendererHQ
 public:
   ~CRendererShaders() = default;
 
-  bool Supports(ESCALINGMETHOD method) override;
+  bool Supports(ESCALINGMETHOD method) const override;
   bool Configure(const VideoPicture& picture, float fps, unsigned orientation) override;
 
   static CRendererBase* Create(CVideoSettings& videoSettings);

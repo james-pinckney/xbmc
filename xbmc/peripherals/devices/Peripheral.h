@@ -8,7 +8,6 @@
 
 #pragma once
 
-#include "XBDateTime.h"
 #include "games/controllers/ControllerTypes.h"
 #include "input/joysticks/interfaces/IInputProvider.h"
 #include "input/keyboard/interfaces/IKeyboardInputProvider.h"
@@ -21,6 +20,7 @@
 #include <vector>
 
 class TiXmlDocument;
+class CDateTime;
 class CSetting;
 class IKeymap;
 
@@ -250,16 +250,23 @@ public:
    *
    * \return The time of last activation, or invalid if unknown/never active
    */
-  virtual CDateTime LastActive() { return CDateTime(); }
+  virtual CDateTime LastActive();
 
   /*!
    * \brief Get the controller profile that best represents this peripheral
    *
    * \return The controller profile, or empty if unknown
    */
-  virtual KODI::GAME::ControllerPtr ControllerProfile() const
+  virtual KODI::GAME::ControllerPtr ControllerProfile() const { return m_controllerProfile; }
+
+  /*!
+   * \brief Set the controller profile for this peripheral
+   *
+   * \param controller The new controller profile
+   */
+  virtual void SetControllerProfile(const KODI::GAME::ControllerPtr& controller)
   {
-    return KODI::GAME::ControllerPtr{};
+    m_controllerProfile = controller;
   }
 
 protected:
@@ -294,5 +301,6 @@ protected:
   std::map<KODI::MOUSE::IMouseInputHandler*, std::unique_ptr<KODI::MOUSE::IMouseDriverHandler>>
       m_mouseHandlers;
   std::map<KODI::JOYSTICK::IButtonMapper*, std::unique_ptr<CAddonButtonMapping>> m_buttonMappers;
+  KODI::GAME::ControllerPtr m_controllerProfile;
 };
 } // namespace PERIPHERALS

@@ -6,9 +6,12 @@
  *  See LICENSES/README.md for more information.
  */
 
-#include "Application.h"
+#include "WakeOnAccess.h"
+
 #include "DNSNameCache.h"
 #include "ServiceBroker.h"
+#include "application/ApplicationComponents.h"
+#include "application/ApplicationPlayer.h"
 #include "dialogs/GUIDialogKaiToast.h"
 #include "dialogs/GUIDialogProgress.h"
 #include "filesystem/SpecialProtocol.h"
@@ -41,8 +44,6 @@
 #include "network/upnp/UPnP.h"
 #include <Platinum/Source/Platinum/Platinum.h>
 #endif
-
-#include "WakeOnAccess.h"
 
 #define DEFAULT_NETWORK_INIT_SEC      (20)   // wait 20 sec for network after startup or resume
 #define DEFAULT_NETWORK_SETTLE_MS     (500)  // require 500ms of consistent network availability before trusting it
@@ -91,10 +92,7 @@ static void ShowDiscoveryMessage(const char* function, const char* server_name, 
 
 struct UPnPServer
 {
-  UPnPServer()
-  {
-    m_nextWake = CDateTime::GetCurrentDateTime();
-  }
+  UPnPServer() : m_nextWake(CDateTime::GetCurrentDateTime()) {}
   bool operator == (const UPnPServer& server) const { return server.m_uuid == m_uuid; }
   bool operator != (const UPnPServer& server) const { return !(*this == server); }
   bool operator == (const std::string& server_uuid) const { return server_uuid == m_uuid; }
@@ -177,14 +175,13 @@ static std::string LookupUPnPHost(const std::string& uuid)
   return "";
 }
 
-CWakeOnAccess::WakeUpEntry::WakeUpEntry (bool isAwake)
-  : timeout (0, 0, 0, DEFAULT_TIMEOUT_SEC)
-  , wait_online1_sec(DEFAULT_WAIT_FOR_ONLINE_SEC_1)
-  , wait_online2_sec(DEFAULT_WAIT_FOR_ONLINE_SEC_2)
-  , wait_services_sec(DEFAULT_WAIT_FOR_SERVICES_SEC)
+CWakeOnAccess::WakeUpEntry::WakeUpEntry(bool isAwake)
+  : timeout(0, 0, 0, DEFAULT_TIMEOUT_SEC),
+    wait_online1_sec(DEFAULT_WAIT_FOR_ONLINE_SEC_1),
+    wait_online2_sec(DEFAULT_WAIT_FOR_ONLINE_SEC_2),
+    wait_services_sec(DEFAULT_WAIT_FOR_SERVICES_SEC),
+    nextWake(CDateTime::GetCurrentDateTime())
 {
-  nextWake = CDateTime::GetCurrentDateTime();
-
   if (isAwake)
     nextWake += timeout;
 }
@@ -528,8 +525,9 @@ bool CWakeOnAccess::WakeUpHost(const WakeUpEntry& server)
   {
     CLog::Log(LOGERROR,"WakeOnAccess failed to send. (Is it blocked by firewall?)");
 
-    if (CServiceBroker::GetAppMessenger()->IsProcessThread() ||
-        !g_application.GetAppPlayer().IsPlaying())
+    const auto& components = CServiceBroker::GetAppComponents();
+    const auto appPlayer = components.GetComponent<CApplicationPlayer>();
+    if (CServiceBroker::GetAppMessenger()->IsProcessThread() || !appPlayer->IsPlaying())
       CGUIDialogKaiToast::QueueNotification(CGUIDialogKaiToast::Error, heading, LOCALIZED(13029));
     return false;
   }

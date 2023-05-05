@@ -12,6 +12,7 @@
 #include "GUIPortDefines.h"
 #include "GUIPortWindow.h"
 #include "ServiceBroker.h"
+#include "addons/AddonManager.h"
 #include "games/GameServices.h"
 #include "games/addons/GameClient.h"
 #include "games/addons/input/GameClientInput.h"
@@ -138,11 +139,16 @@ void CGUIPortList::SetFocused()
   m_viewControl->SetFocused();
 }
 
-void CGUIPortList::OnSelect()
+bool CGUIPortList::OnSelect()
 {
   const int itemIndex = m_viewControl->GetSelectedItem();
   if (itemIndex >= 0)
+  {
     OnItemSelect(static_cast<unsigned int>(itemIndex));
+    return true;
+  }
+
+  return false;
 }
 
 void CGUIPortList::ResetPorts()
@@ -169,7 +175,7 @@ void CGUIPortList::OnEvent(const ADDON::AddonEvent& event)
   {
     using namespace MESSAGING;
     CGUIMessage msg(GUI_MSG_REFRESH_LIST, m_guiWindow.GetID(), CONTROL_PORT_LIST);
-    msg.SetStringParam(event.id);
+    msg.SetStringParam(event.addonId);
     CServiceBroker::GetAppMessenger()->SendGUIMessage(msg, m_guiWindow.GetID());
   }
 }

@@ -9,11 +9,11 @@
 #include "PortManager.h"
 
 #include "URL.h"
-#include "filesystem/File.h"
 #include "games/controllers/Controller.h"
 #include "games/controllers/types/ControllerHub.h"
 #include "games/controllers/types/ControllerNode.h"
 #include "games/ports/types/PortNode.h"
+#include "utils/FileUtils.h"
 #include "utils/URIUtils.h"
 #include "utils/XBMCTinyXML.h"
 #include "utils/XMLUtils.h"
@@ -59,7 +59,7 @@ void CPortManager::SetControllerTree(const CControllerTree& controllerTree)
 
 void CPortManager::LoadXML()
 {
-  if (!XFILE::CFile::Exists(m_xmlPath))
+  if (!CFileUtils::Exists(m_xmlPath))
   {
     CLog::Log(LOGDEBUG, "Can't load port config, file doesn't exist: {}", m_xmlPath);
     return;
@@ -222,7 +222,7 @@ void CPortManager::DeserializeControllers(const TiXmlElement* pPort, ControllerN
       continue;
     }
 
-    std::string controllerId = XMLUtils::GetAttribute(pPort, XML_ATTR_CONTROLLER_ID);
+    std::string controllerId = XMLUtils::GetAttribute(pController, XML_ATTR_CONTROLLER_ID);
 
     auto it = std::find_if(controllers.begin(), controllers.end(),
                            [&controllerId](const CControllerNode& controller) {

@@ -140,6 +140,8 @@ public:
   static bool IsLiveTV(const std::string& strFile);
   static bool IsPVRRecording(const std::string& strFile);
   static bool IsPVRRecordingFileOrFolder(const std::string& strFile);
+  static bool IsPVRTVRecordingFileOrFolder(const std::string& strFile);
+  static bool IsPVRRadioRecordingFileOrFolder(const std::string& strFile);
   static bool IsMultiPath(const std::string& strPath);
   static bool IsMusicDb(const std::string& strFile);
   static bool IsNfs(const std::string& strFile);
@@ -153,6 +155,7 @@ public:
   static bool IsSmb(const std::string& strFile);
   static bool IsSpecial(const std::string& strFile);
   static bool IsStack(const std::string& strFile);
+  static bool IsFavourite(const std::string& strFile);
   static bool IsUPnP(const std::string& strFile);
   static bool IsURL(const std::string& strFile);
   static bool IsVideoDb(const std::string& strFile);

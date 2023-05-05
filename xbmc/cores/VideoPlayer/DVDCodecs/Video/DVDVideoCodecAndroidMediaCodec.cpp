@@ -32,7 +32,6 @@
 #include "utils/log.h"
 #include "windowing/android/AndroidUtils.h"
 
-#include "platform/android/activity/AndroidFeatures.h"
 #include "platform/android/activity/JNIXBMCSurfaceTextureOnFrameAvailableListener.h"
 #include "platform/android/activity/XBMCApp.h"
 
@@ -54,19 +53,6 @@
 #include <androidjni/Surface.h>
 #include <androidjni/SurfaceTexture.h>
 #include <androidjni/UUID.h>
-
-static const char* XMEDIAFORMAT_KEY_ROTATION = "rotation-degrees";
-static const char* XMEDIAFORMAT_KEY_SLICE = "slice-height";
-static const char* XMEDIAFORMAT_KEY_CROP_LEFT = "crop-left";
-static const char* XMEDIAFORMAT_KEY_CROP_RIGHT = "crop-right";
-static const char* XMEDIAFORMAT_KEY_CROP_TOP = "crop-top";
-static const char* XMEDIAFORMAT_KEY_CROP_BOTTOM = "crop-bottom";
-static const char* XMEDIAFORMAT_FEATURE_TUNNELED_PLAYBACK = "feature-tunneled-playback";
-static const char* XMEDIAFORMAT_FEATURE_SECURE_PLAYBACK = "feature-secure-playback";
-static const char* XMEDIAFORMAT_KEY_COLOR_STANDARD = "color-standard";
-static const char* XMEDIAFORMAT_KEY_COLOR_RANGE = "color-range";
-static const char* XMEDIAFORMAT_KEY_COLOR_TRANSFER = "color-transfer";
-static const char* XMEDIAFORMAT_KEY_HDR_STATIC_INFO = "hdr-static-info";
 
 using namespace KODI::MESSAGING;
 
@@ -177,8 +163,9 @@ void CMediaCodecVideoBuffer::ReleaseOutputBuffer(bool render, int64_t displayTim
 
   if (xbmc_jnienv()->ExceptionCheck())
   {
-    xbmc_jnienv()->ExceptionClear();
     CLog::Log(LOGERROR, "CMediaCodecVideoBuffer::ReleaseOutputBuffer error in render({})", render);
+    xbmc_jnienv()->ExceptionDescribe();
+    xbmc_jnienv()->ExceptionClear();
   }
 }
 
@@ -442,7 +429,7 @@ bool CDVDVideoCodecAndroidMediaCodec::Open(CDVDStreamInfo &hints, CDVDCodecOptio
       m_formatname = "amc-vp8";
       break;
     case AV_CODEC_ID_VP9:
-      switch(hints.profile)
+      switch (m_hints.profile)
       {
         case FF_PROFILE_VP9_0:
           profile = CJNIMediaCodecInfoCodecProfileLevel::VP9Profile0;
@@ -467,8 +454,20 @@ bool CDVDVideoCodecAndroidMediaCodec::Open(CDVDStreamInfo &hints, CDVDCodecOptio
     case AV_CODEC_ID_AVS:
     case AV_CODEC_ID_CAVS:
     case AV_CODEC_ID_H264:
-      switch(hints.profile)
+      switch (m_hints.profile)
       {
+        case FF_PROFILE_H264_BASELINE:
+          profile = CJNIMediaCodecInfoCodecProfileLevel::AVCProfileBaseline;
+          break;
+        case FF_PROFILE_H264_MAIN:
+          profile = CJNIMediaCodecInfoCodecProfileLevel::AVCProfileMain;
+          break;
+        case FF_PROFILE_H264_EXTENDED:
+          profile = CJNIMediaCodecInfoCodecProfileLevel::AVCProfileExtended;
+          break;
+        case FF_PROFILE_H264_HIGH:
+          profile = CJNIMediaCodecInfoCodecProfileLevel::AVCProfileHigh;
+          break;
         case FF_PROFILE_H264_HIGH_10:
           profile = CJNIMediaCodecInfoCodecProfileLevel::AVCProfileHigh10;
           break;
@@ -502,10 +501,22 @@ bool CDVDVideoCodecAndroidMediaCodec::Open(CDVDStreamInfo &hints, CDVDCodecOptio
       break;
     case AV_CODEC_ID_HEVC:
     {
-      if (m_hints.profile == FF_PROFILE_HEVC_REXT)
+      switch (m_hints.profile)
       {
-        // No known h/w decoder supporting Hi10P
-        goto FAIL;
+        case FF_PROFILE_HEVC_MAIN:
+          profile = CJNIMediaCodecInfoCodecProfileLevel::HEVCProfileMain;
+          break;
+        case FF_PROFILE_HEVC_MAIN_10:
+          profile = CJNIMediaCodecInfoCodecProfileLevel::HEVCProfileMain10;
+          break;
+        case FF_PROFILE_HEVC_MAIN_STILL_PICTURE:
+          profile = CJNIMediaCodecInfoCodecProfileLevel::HEVCProfileMainStill;
+          break;
+        case FF_PROFILE_HEVC_REXT:
+          // No known h/w decoder supporting Hi10P
+          goto FAIL;
+        default:
+          break;
       }
 
       m_mime = "video/hevc";
@@ -513,6 +524,16 @@ bool CDVDVideoCodecAndroidMediaCodec::Open(CDVDStreamInfo &hints, CDVDCodecOptio
 
       bool isDvhe = (m_hints.codec_tag == MKTAG('d', 'v', 'h', 'e'));
       bool isDvh1 = (m_hints.codec_tag == MKTAG('d', 'v', 'h', '1'));
+
+      // some files don't have dvhe or dvh1 tag set up but have Dolby Vision side data
+      if (!isDvhe && !isDvh1 && m_hints.hdrType == StreamHdrType::HDR_TYPE_DOLBYVISION)
+      {
+        // page 10, table 2 from https://professional.dolby.com/siteassets/content-creation/dolby-vision-for-content-creators/dolby-vision-streams-within-the-http-live-streaming-format-v2.0-13-november-2018.pdf
+        if (m_hints.codec_tag == MKTAG('h', 'v', 'c', '1'))
+          isDvh1 = true;
+        else
+          isDvhe = true;
+      }
 
       if (isDvhe || isDvh1)
       {
@@ -525,10 +546,17 @@ bool CDVDVideoCodecAndroidMediaCodec::Open(CDVDStreamInfo &hints, CDVDCodecOptio
                   "Display: {}, MediaCodec: {}",
                   displaySupportsDovi, mediaCodecSupportsDovi);
 
-        if (displaySupportsDovi && mediaCodecSupportsDovi)
+        // For Dolby Vision profiles that don't have HDR10 fallback, always use
+        // the dvhe decoder even if the display not supports Dolby Vision.
+        // For profiles that has HDR10 fallback (7, 8) is better use HEVC decoder to
+        // ensure HDR10 output if display is not DV capable.
+        bool notHasHDR10fallback = (m_hints.dovi.dv_profile == 4 || m_hints.dovi.dv_profile == 5);
+
+        if (mediaCodecSupportsDovi && (displaySupportsDovi || notHasHDR10fallback))
         {
           m_mime = "video/dolby-vision";
           m_formatname = isDvhe ? "amc-dvhe" : "amc-dvh1";
+          profile = 0; // not an HEVC profile
         }
       }
 
@@ -601,7 +629,7 @@ bool CDVDVideoCodecAndroidMediaCodec::Open(CDVDStreamInfo &hints, CDVDCodecOptio
     }
     case AV_CODEC_ID_AV1:
     {
-      switch (hints.profile)
+      switch (m_hints.profile)
       {
         case FF_PROFILE_AV1_MAIN:
           profile = CJNIMediaCodecInfoCodecProfileLevel::AV1ProfileMain8;
@@ -655,7 +683,7 @@ bool CDVDVideoCodecAndroidMediaCodec::Open(CDVDStreamInfo &hints, CDVDCodecOptio
 
     CLog::Log(
         LOGINFO,
-        "CDVDVideoCodecAndroidMediaCodec::Open: Secure decoder requested: {} (stream flags: {})",
+        "CDVDVideoCodecAndroidMediaCodec::Open Secure decoder requested: {} (stream flags: {})",
         m_needSecureDecoder ? "true" : "false", m_hints.cryptoSession->flags);
   }
 
@@ -672,12 +700,13 @@ bool CDVDVideoCodecAndroidMediaCodec::Open(CDVDStreamInfo &hints, CDVDCodecOptio
     if (!CServiceBroker::GetDecoderFilterManager()->isValid(m_codecname, m_hints))
       continue;
 
-    CLog::Log(LOGINFO, "CDVDVideoCodecAndroidMediaCodec::Open Testing codec:{}", m_codecname);
+    CLog::Log(LOGINFO, "CDVDVideoCodecAndroidMediaCodec::Open Testing codec: {}", m_codecname);
 
     CJNIMediaCodecInfoCodecCapabilities codec_caps = codec_info.getCapabilitiesForType(m_mime);
     if (xbmc_jnienv()->ExceptionCheck())
     {
       // Unsupported type?
+      xbmc_jnienv()->ExceptionDescribe();
       xbmc_jnienv()->ExceptionClear();
       continue;
     }
@@ -692,7 +721,7 @@ bool CDVDVideoCodecAndroidMediaCodec::Open(CDVDStreamInfo &hints, CDVDCodecOptio
     }
     else if (codecIsSecure)
     {
-      CLog::Log(LOGINFO, "CDVDVideoCodecAndroidMediaCodec::Open: skipping insecure decoder while "
+      CLog::Log(LOGINFO, "CDVDVideoCodecAndroidMediaCodec::Open skipping insecure decoder while "
                          "secure decoding is required");
       continue;
     }
@@ -707,7 +736,7 @@ bool CDVDVideoCodecAndroidMediaCodec::Open(CDVDStreamInfo &hints, CDVDCodecOptio
                          return profileLevel.profile() == profile;
                        }) == profileLevels.cend())
       {
-        CLog::Log(LOGERROR, "CDVDVideoCodecAndroidMediaCodec::Open: profile not supported: {}",
+        CLog::Log(LOGERROR, "CDVDVideoCodecAndroidMediaCodec::Open profile not supported: {}",
                   profile);
         continue;
       }
@@ -723,6 +752,7 @@ bool CDVDVideoCodecAndroidMediaCodec::Open(CDVDStreamInfo &hints, CDVDCodecOptio
             new CJNIMediaCodec(CJNIMediaCodec::createByCodecName(m_codecname)));
         if (xbmc_jnienv()->ExceptionCheck())
         {
+          xbmc_jnienv()->ExceptionDescribe();
           xbmc_jnienv()->ExceptionClear();
           m_codec = nullptr;
         }
@@ -749,7 +779,8 @@ bool CDVDVideoCodecAndroidMediaCodec::Open(CDVDStreamInfo &hints, CDVDCodecOptio
   }
   if (!m_codec)
   {
-    CLog::Log(LOGERROR, "CDVDVideoCodecAndroidMediaCodec:: Failed to create Android MediaCodec");
+    CLog::Log(LOGERROR,
+              "CDVDVideoCodecAndroidMediaCodec::Open Failed to create Android MediaCodec");
     goto FAIL;
   }
 
@@ -763,7 +794,7 @@ bool CDVDVideoCodecAndroidMediaCodec::Open(CDVDStreamInfo &hints, CDVDCodecOptio
 
     if (!m_crypto)
     {
-      CLog::Log(LOGERROR, "CDVDVideoCodecAndroidMediaCodec::Open: MediaCrypto creation failed");
+      CLog::Log(LOGERROR, "CDVDVideoCodecAndroidMediaCodec::Open MediaCrypto creation failed");
       goto FAIL;
     }
   }
@@ -773,7 +804,7 @@ bool CDVDVideoCodecAndroidMediaCodec::Open(CDVDStreamInfo &hints, CDVDCodecOptio
     m_jnivideoview.reset(CJNIXBMCVideoView::createVideoView(this));
     if (!m_jnivideoview || !m_jnivideoview->waitForSurface(2000))
     {
-      CLog::Log(LOGERROR, "CDVDVideoCodecAndroidMediaCodec: VideoView creation failed!!");
+      CLog::Log(LOGERROR, "CDVDVideoCodecAndroidMediaCodec::Open VideoView creation failed!!");
       goto FAIL;
     }
   }
@@ -798,10 +829,7 @@ bool CDVDVideoCodecAndroidMediaCodec::Open(CDVDStreamInfo &hints, CDVDCodecOptio
   else
     m_invalidPTSValue = 0;
 
-  CLog::Log(LOGINFO,
-            "CDVDVideoCodecAndroidMediaCodec:: "
-            "Open Android MediaCodec {}",
-            m_codecname);
+  CLog::Log(LOGINFO, "CDVDVideoCodecAndroidMediaCodec::Open Using codec: {}", m_codecname);
 
   m_opened = true;
 
@@ -949,6 +977,7 @@ bool CDVDVideoCodecAndroidMediaCodec::AddData(const DemuxPacket &packet)
       CJNIByteBuffer buffer = m_codec->getInputBuffer(m_indexInputBuffer);
       if (xbmc_jnienv()->ExceptionCheck())
       {
+        xbmc_jnienv()->ExceptionDescribe();
         xbmc_jnienv()->ExceptionClear();
         CLog::Log(LOGERROR, "CDVDVideoCodecAndroidMediaCodec::AddData: getInputBuffer failed");
         return false;
@@ -1054,6 +1083,7 @@ bool CDVDVideoCodecAndroidMediaCodec::AddData(const DemuxPacket &packet)
       }
       if (xbmc_jnienv()->ExceptionCheck())
       {
+        xbmc_jnienv()->ExceptionDescribe();
         xbmc_jnienv()->ExceptionClear();
         CLog::Log(LOGERROR, "CDVDVideoCodecAndroidMediaCodec::AddData error");
       }
@@ -1077,6 +1107,7 @@ void CDVDVideoCodecAndroidMediaCodec::Reset()
     m_codec->flush();
     if (xbmc_jnienv()->ExceptionCheck())
     {
+      xbmc_jnienv()->ExceptionDescribe();
       xbmc_jnienv()->ExceptionClear();
       CLog::Log(LOGERROR, "CDVDVideoCodecAndroidMediaCodec::Reset: flush failed");
     }
@@ -1086,6 +1117,7 @@ void CDVDVideoCodecAndroidMediaCodec::Reset()
       m_codec->stop();
       if (xbmc_jnienv()->ExceptionCheck())
       {
+        xbmc_jnienv()->ExceptionDescribe();
         xbmc_jnienv()->ExceptionClear();
         CLog::Log(LOGERROR, "CDVDVideoCodecAndroidMediaCodec::Reset: stop failed");
       }
@@ -1096,6 +1128,7 @@ void CDVDVideoCodecAndroidMediaCodec::Reset()
       CJNIMediaFormat mediaFormat = m_codec->getOutputFormat();
       if (xbmc_jnienv()->ExceptionCheck())
       {
+        xbmc_jnienv()->ExceptionDescribe();
         xbmc_jnienv()->ExceptionClear();
         CLog::Log(LOGERROR, "CDVDVideoCodecAndroidMediaCodec::Reset: getOutputFormat failed");
       }
@@ -1180,6 +1213,7 @@ CDVDVideoCodec::VCReturn CDVDVideoCodecAndroidMediaCodec::GetPicture(VideoPictur
       m_indexInputBuffer = m_codec->dequeueInputBuffer(5000 /*timeout*/);
       if (xbmc_jnienv()->ExceptionCheck())
       {
+        xbmc_jnienv()->ExceptionDescribe();
         xbmc_jnienv()->ExceptionClear();
         CLog::Log(LOGERROR,
                   "CDVDVideoCodecAndroidMediaCodec::GetPicture dequeueInputBuffer failed");
@@ -1246,6 +1280,7 @@ void CDVDVideoCodecAndroidMediaCodec::SignalEndOfStream()
       m_indexInputBuffer = m_codec->dequeueInputBuffer(100000);
       if (xbmc_jnienv()->ExceptionCheck())
       {
+        xbmc_jnienv()->ExceptionDescribe();
         xbmc_jnienv()->ExceptionClear();
         CLog::Log(LOGERROR,
                   "CDVDVideoCodecAndroidMediaCodec::SignalEndOfStream: dequeueInputBuffer failed");
@@ -1260,6 +1295,7 @@ void CDVDVideoCodecAndroidMediaCodec::SignalEndOfStream()
                                 CJNIMediaCodec::BUFFER_FLAG_END_OF_STREAM);
       if (xbmc_jnienv()->ExceptionCheck())
       {
+        xbmc_jnienv()->ExceptionDescribe();
         xbmc_jnienv()->ExceptionClear();
         CLog::Log(LOGERROR, "CDVDVideoCodecAndroidMediaCodec::{}: queueInputBuffer failed");
       }
@@ -1345,63 +1381,102 @@ bool CDVDVideoCodecAndroidMediaCodec::ConfigureMediaCodec(void)
   // setup a MediaFormat to match the video content,
   // used by codec during configure
   CJNIMediaFormat mediaformat =
-      CJNIMediaFormat::createVideoFormat(m_mime.c_str(), m_hints.width, m_hints.height);
+      CJNIMediaFormat::createVideoFormat(m_mime, m_hints.width, m_hints.height);
   mediaformat.setInteger(CJNIMediaFormat::KEY_MAX_INPUT_SIZE, 0);
 
   if (CJNIBase::GetSDKVersion() >= 23 && m_render_surface)
   {
     // Handle rotation
-    mediaformat.setInteger(XMEDIAFORMAT_KEY_ROTATION, m_hints.orientation);
-    mediaformat.setInteger(XMEDIAFORMAT_FEATURE_TUNNELED_PLAYBACK, 0);
+    mediaformat.setInteger(CJNIMediaFormat::KEY_ROTATION, m_hints.orientation);
+    mediaformat.setFeatureEnabled(CJNIMediaCodecInfoCodecCapabilities::FEATURE_TunneledPlayback,
+                                  false);
     if (m_needSecureDecoder)
-      mediaformat.setInteger(XMEDIAFORMAT_FEATURE_SECURE_PLAYBACK, 1);
+      mediaformat.setFeatureEnabled(CJNIMediaCodecInfoCodecCapabilities::FEATURE_SecurePlayback,
+                                    true);
   }
 
   if (CJNIBase::GetSDKVersion() >= 24)
   {
-    if (m_hints.colorRange != AVCOL_RANGE_UNSPECIFIED)
-      mediaformat.setInteger(XMEDIAFORMAT_KEY_COLOR_RANGE, m_hints.colorRange);
-
-    if (m_hints.colorPrimaries != AVCOL_PRI_UNSPECIFIED)
+    switch (m_hints.colorRange)
     {
-      switch (m_hints.colorPrimaries)
-      {
+      case AVCOL_RANGE_UNSPECIFIED:
+        CLog::Log(LOGDEBUG, "CDVDVideoCodecAndroidMediaCodec::ConfigureMediaCodec Color range: "
+                            "AVCOL_RANGE_UNSPECIFIED");
+        break;
+      case AVCOL_RANGE_MPEG:
+        mediaformat.setInteger(CJNIMediaFormat::KEY_COLOR_RANGE,
+                               CJNIMediaFormat::COLOR_RANGE_LIMITED);
+        break;
+      case AVCOL_RANGE_JPEG:
+        mediaformat.setInteger(CJNIMediaFormat::KEY_COLOR_RANGE, CJNIMediaFormat::COLOR_RANGE_FULL);
+        break;
+      default:
+        CLog::Log(LOGWARNING,
+                  "CDVDVideoCodecAndroidMediaCodec::ConfigureMediaCodec Unhandled Color range: {}",
+                  m_hints.colorRange);
+        break;
+    }
+
+    switch (m_hints.colorPrimaries)
+    {
+      case AVCOL_PRI_UNSPECIFIED:
+        CLog::Log(LOGDEBUG, "CDVDVideoCodecAndroidMediaCodec::ConfigureMediaCodec Color primaries: "
+                            "AVCOL_PRI_UNSPECIFIED");
+        break;
       case AVCOL_PRI_BT709:
-        mediaformat.setInteger(XMEDIAFORMAT_KEY_COLOR_STANDARD, 1);
+        mediaformat.setInteger(CJNIMediaFormat::KEY_COLOR_STANDARD,
+                               CJNIMediaFormat::COLOR_STANDARD_BT709);
         break;
       case AVCOL_PRI_BT2020:
-        mediaformat.setInteger(XMEDIAFORMAT_KEY_COLOR_STANDARD, 6);
+        mediaformat.setInteger(CJNIMediaFormat::KEY_COLOR_STANDARD,
+                               CJNIMediaFormat::COLOR_STANDARD_BT2020);
         break;
-      default:; // do nothing
-      }
+      default:
+        CLog::Log(
+            LOGWARNING,
+            "CDVDVideoCodecAndroidMediaCodec::ConfigureMediaCodec Unhandled Color primaries: {}",
+            m_hints.colorPrimaries);
+        break;
     }
 
-    if (m_hints.colorTransferCharacteristic != AVCOL_TRC_UNSPECIFIED)
+    switch (m_hints.colorTransferCharacteristic)
     {
-      switch (m_hints.colorTransferCharacteristic)
-      {
-      case AVCOL_TRC_LINEAR:
-        mediaformat.setInteger(XMEDIAFORMAT_KEY_COLOR_TRANSFER, 1); // COLOR_TRANSFER_LINEAR
+      case AVCOL_TRC_UNSPECIFIED:
+        CLog::Log(LOGDEBUG, "CDVDVideoCodecAndroidMediaCodec::ConfigureMediaCodec Transfer "
+                            "characteristic: AVCOL_TRC_UNSPECIFIED");
         break;
+      case AVCOL_TRC_LINEAR:
+        mediaformat.setInteger(CJNIMediaFormat::KEY_COLOR_TRANSFER,
+                               CJNIMediaFormat::COLOR_TRANSFER_LINEAR);
+        break;
+      case AVCOL_TRC_BT709:
       case AVCOL_TRC_SMPTE170M:
-        mediaformat.setInteger(XMEDIAFORMAT_KEY_COLOR_TRANSFER, 3); // COLOR_TRANSFER_SDR_VIDEO
+        mediaformat.setInteger(CJNIMediaFormat::KEY_COLOR_TRANSFER,
+                               CJNIMediaFormat::COLOR_TRANSFER_SDR_VIDEO);
         break;
       case AVCOL_TRC_SMPTE2084:
-        mediaformat.setInteger(XMEDIAFORMAT_KEY_COLOR_TRANSFER, 6); // COLOR_TRANSFER_ST2084
+        mediaformat.setInteger(CJNIMediaFormat::KEY_COLOR_TRANSFER,
+                               CJNIMediaFormat::COLOR_TRANSFER_ST2084);
         break;
       case AVCOL_TRC_ARIB_STD_B67:
-        mediaformat.setInteger(XMEDIAFORMAT_KEY_COLOR_TRANSFER, 7); // COLOR_TRANSFER_HLG
+        mediaformat.setInteger(CJNIMediaFormat::KEY_COLOR_TRANSFER,
+                               CJNIMediaFormat::COLOR_TRANSFER_HLG);
         break;
-      default:; // do nothing
-      }
+      default:
+        CLog::Log(LOGWARNING,
+                  "CDVDVideoCodecAndroidMediaCodec::ConfigureMediaCodec Unhandled Transfer "
+                  "characteristic: {}",
+                  m_hints.colorTransferCharacteristic);
+        break;
     }
+
     std::vector<uint8_t> hdr_static_data = GetHDRStaticMetadata();
     if (!hdr_static_data.empty())
     {
       CJNIByteBuffer bytebuffer = CJNIByteBuffer::allocateDirect(hdr_static_data.size());
       void* dts_ptr = xbmc_jnienv()->GetDirectBufferAddress(bytebuffer.get_raw());
       memcpy(dts_ptr, hdr_static_data.data(), hdr_static_data.size());
-      mediaformat.setByteBuffer(XMEDIAFORMAT_KEY_HDR_STATIC_INFO, bytebuffer);
+      mediaformat.setByteBuffer(CJNIMediaFormat::KEY_HDR_STATIC_INFO, bytebuffer);
     }
   }
 
@@ -1431,6 +1506,7 @@ bool CDVDVideoCodecAndroidMediaCodec::ConfigureMediaCodec(void)
 
   if (xbmc_jnienv()->ExceptionCheck())
   {
+    xbmc_jnienv()->ExceptionDescribe();
     xbmc_jnienv()->ExceptionClear();
     CLog::Log(LOGERROR, "CDVDVideoCodecAndroidMediaCodec::ConfigureMediaCodec: configure failed");
     return false;
@@ -1440,6 +1516,7 @@ bool CDVDVideoCodecAndroidMediaCodec::ConfigureMediaCodec(void)
   m_codec->start();
   if (xbmc_jnienv()->ExceptionCheck())
   {
+    xbmc_jnienv()->ExceptionDescribe();
     xbmc_jnienv()->ExceptionClear();
     Dispose();
     CLog::Log(LOGERROR, "CDVDVideoCodecAndroidMediaCodec:ConfigureMediaCodec: start failed");
@@ -1463,6 +1540,7 @@ int CDVDVideoCodecAndroidMediaCodec::GetOutputPicture(void)
   ssize_t index = m_codec->dequeueOutputBuffer(bufferInfo, timeout_us);
   if (xbmc_jnienv()->ExceptionCheck())
   {
+    xbmc_jnienv()->ExceptionDescribe();
     xbmc_jnienv()->ExceptionClear();
     CLog::Log(LOGERROR,
               "CDVDVideoCodecAndroidMediaCodec:GetOutputPicture dequeueOutputBuffer failed");
@@ -1488,6 +1566,7 @@ int CDVDVideoCodecAndroidMediaCodec::GetOutputPicture(void)
       m_codec->releaseOutputBuffer(index, false);
       if (xbmc_jnienv()->ExceptionCheck())
       {
+        xbmc_jnienv()->ExceptionDescribe();
         xbmc_jnienv()->ExceptionClear();
         CLog::Log(
             LOGERROR,
@@ -1503,6 +1582,7 @@ int CDVDVideoCodecAndroidMediaCodec::GetOutputPicture(void)
       m_codec->releaseOutputBuffer(index, false);
       if (xbmc_jnienv()->ExceptionCheck())
       {
+        xbmc_jnienv()->ExceptionDescribe();
         xbmc_jnienv()->ExceptionClear();
         CLog::Log(
             LOGERROR,
@@ -1524,6 +1604,7 @@ int CDVDVideoCodecAndroidMediaCodec::GetOutputPicture(void)
     CJNIMediaFormat mediaformat = m_codec->getOutputFormat();
     if (xbmc_jnienv()->ExceptionCheck())
     {
+      xbmc_jnienv()->ExceptionDescribe();
       xbmc_jnienv()->ExceptionClear();
       CLog::Log(LOGERROR, "CDVDVideoCodecAndroidMediaCodec::GetOutputPicture(INFO_OUTPUT_FORMAT_CHANGED) ExceptionCheck: getOutputBuffers");
     }
@@ -1559,25 +1640,32 @@ void CDVDVideoCodecAndroidMediaCodec::ConfigureOutputFormat(CJNIMediaFormat& med
   int crop_right  = 0;
   int crop_bottom = 0;
 
-  if (mediaformat.containsKey("width"))
-    width = mediaformat.getInteger("width");
-  if (mediaformat.containsKey("height"))
-    height = mediaformat.getInteger("height");
-  if (mediaformat.containsKey("stride"))
-    stride = mediaformat.getInteger("stride");
-  if (mediaformat.containsKey(XMEDIAFORMAT_KEY_SLICE))
-    slice_height = mediaformat.getInteger(XMEDIAFORMAT_KEY_SLICE);
-  if (mediaformat.containsKey("color-format"))
-    color_format = mediaformat.getInteger("color-format");
-  if (mediaformat.containsKey(XMEDIAFORMAT_KEY_CROP_LEFT))
-    crop_left = mediaformat.getInteger(XMEDIAFORMAT_KEY_CROP_LEFT);
-  if (mediaformat.containsKey(XMEDIAFORMAT_KEY_CROP_TOP))
-    crop_top = mediaformat.getInteger(XMEDIAFORMAT_KEY_CROP_TOP);
-  if (mediaformat.containsKey(XMEDIAFORMAT_KEY_CROP_RIGHT))
-    crop_right = mediaformat.getInteger(XMEDIAFORMAT_KEY_CROP_RIGHT);
-  if (mediaformat.containsKey(XMEDIAFORMAT_KEY_CROP_BOTTOM))
-    crop_bottom = mediaformat.getInteger(XMEDIAFORMAT_KEY_CROP_BOTTOM);
+  if (mediaformat.containsKey(CJNIMediaFormat::KEY_WIDTH))
+    width = mediaformat.getInteger(CJNIMediaFormat::KEY_WIDTH);
+  if (mediaformat.containsKey(CJNIMediaFormat::KEY_HEIGHT))
+    height = mediaformat.getInteger(CJNIMediaFormat::KEY_HEIGHT);
+  if (mediaformat.containsKey(CJNIMediaFormat::KEY_COLOR_FORMAT))
+    color_format = mediaformat.getInteger(CJNIMediaFormat::KEY_COLOR_FORMAT);
 
+  if (CJNIBase::GetSDKVersion() >= 23)
+  {
+    if (mediaformat.containsKey(CJNIMediaFormat::KEY_STRIDE))
+      stride = mediaformat.getInteger(CJNIMediaFormat::KEY_STRIDE);
+    if (mediaformat.containsKey(CJNIMediaFormat::KEY_SLICE_HEIGHT))
+      slice_height = mediaformat.getInteger(CJNIMediaFormat::KEY_SLICE_HEIGHT);
+  }
+
+  if (CJNIBase::GetSDKVersion() >= 33)
+  {
+    if (mediaformat.containsKey(CJNIMediaFormat::KEY_CROP_LEFT))
+      crop_left = mediaformat.getInteger(CJNIMediaFormat::KEY_CROP_LEFT);
+    if (mediaformat.containsKey(CJNIMediaFormat::KEY_CROP_TOP))
+      crop_top = mediaformat.getInteger(CJNIMediaFormat::KEY_CROP_TOP);
+    if (mediaformat.containsKey(CJNIMediaFormat::KEY_CROP_RIGHT))
+      crop_right = mediaformat.getInteger(CJNIMediaFormat::KEY_CROP_RIGHT);
+    if (mediaformat.containsKey(CJNIMediaFormat::KEY_CROP_BOTTOM))
+      crop_bottom = mediaformat.getInteger(CJNIMediaFormat::KEY_CROP_BOTTOM);
+  }
 
   if (!crop_right)
     crop_right = width-1;

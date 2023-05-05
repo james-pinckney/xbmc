@@ -8,10 +8,10 @@
 
 #include "WinEventsSDL.h"
 
-#include "AppInboundProtocol.h"
-#include "Application.h"
 #include "GUIUserMessages.h"
 #include "ServiceBroker.h"
+#include "application/AppInboundProtocol.h"
+#include "application/Application.h"
 #include "guilib/GUIComponent.h"
 #include "guilib/GUIWindowManager.h"
 #include "input/InputManager.h"
@@ -191,10 +191,9 @@ bool CWinEventsOSX::MessagePump()
 
 bool CWinEventsOSX::ProcessOSXShortcuts(SDL_Event& event)
 {
-  static bool shift = false, cmd = false;
+  static bool cmd = false;
 
   cmd   = !!(SDL_GetModState() & (KMOD_LMETA  | KMOD_RMETA ));
-  shift = !!(SDL_GetModState() & (KMOD_LSHIFT | KMOD_RSHIFT));
 
   if (cmd && event.key.type == SDL_KEYDOWN)
   {

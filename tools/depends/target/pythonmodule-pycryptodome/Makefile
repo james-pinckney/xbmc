@@ -1,7 +1,8 @@
 include ../../Makefile.include PYTHONMODULE-PYCRYPTODOME-VERSION ../../download-files.include
 DEPS= ../../Makefile.include Makefile PYTHONMODULE-PYCRYPTODOME-VERSION ../../download-files.include \
-                             01-nosetuptool.patch 02-android-dlopen.patch \
-                             03-obey-crosscompileflags.patch
+                             01-nosetuptool.patch \
+                             02-revert-ctype.pythonapi-use.patch \
+                             03-android-dlopen.patch
 
 LDSHARED=$(CC) -shared
 
@@ -24,30 +25,22 @@ export CC CFLAGS
 export LDSHARED LDFLAGS
 export PYTHONPATH=$(PYTHON_SITE_PKG)
 
-LIBDYLIB=$(PLATFORM)/build/lib.$(OS)-$(CPU)-$(PYTHON_VERSION)/Cryptodome
-ifeq ($(NATIVE_OS), osx)
-  # this module will always recompile. currently the hardcoded 10.4 is incorrect
-  # and would need to be generated based on sdk version that we dont currently collect
-	LIBDYLIB=$(PLATFORM)/build/lib.macosx-10.4-$(CPU)-$(PYTHON_VERSION)/Cryptodome
-endif
-
 all: .installed-$(PLATFORM)
 
 
-$(PLATFORM): $(TARBALLS_LOCATION)/$(ARCHIVE).$(HASH_TYPE) $(DEPS)
+$(PLATFORM): $(DEPS) | $(TARBALLS_LOCATION)/$(ARCHIVE).$(HASH_TYPE)
 	rm -rf $(PLATFORM)/*; mkdir -p $(PLATFORM)
 	cd $(PLATFORM); $(ARCHIVE_TOOL) $(ARCHIVE_TOOL_FLAGS) $(TARBALLS_LOCATION)/$(ARCHIVE)
 	cd $(PLATFORM); patch -p1 -i ../01-nosetuptool.patch
+	cd $(PLATFORM); patch -p1 -i ../02-revert-ctype.pythonapi-use.patch
 ifeq ($(OS),android)
-	cd $(PLATFORM); patch -p1 -i ../02-android-dlopen.patch
+	cd $(PLATFORM); patch -p1 -i ../03-android-dlopen.patch
 endif
-	cd $(PLATFORM); patch -p1 -i ../03-obey-crosscompileflags.patch
 
-$(LIBDYLIB): $(PLATFORM)
+.installed-$(PLATFORM): $(PLATFORM)
 	cd $(PLATFORM); touch .separate_namespace && $(NATIVEPREFIX)/bin/python3 setup.py build_ext --plat-name $(OS)-$(CPU)
-
-.installed-$(PLATFORM): $(LIBDYLIB)
 	cd $(PLATFORM); $(NATIVEPREFIX)/bin/python3 setup.py install --prefix=$(PREFIX)
+	cd $(PYTHON_SITE_PKG); mkdir -p Cryptodome && cp -rf pycryptodomex*.egg/Cryptodome/* ./Cryptodome && rm -rf pycryptodomex*.egg
 	touch $@
 
 clean:

@@ -58,15 +58,16 @@ bool CTextureCacheJob::DoWork()
 {
   if (ShouldCancel(0, 0))
     return false;
-  if (ShouldCancel(1, 0)) // HACK: second check is because we cancel the job in the first callback, but we don't detect it
-    return false;         //       until the second
 
   // check whether we need cache the job anyway
   bool needsRecaching = false;
   std::string path(CServiceBroker::GetTextureCache()->CheckCachedImage(m_url, needsRecaching));
   if (!path.empty() && !needsRecaching)
     return false;
-  return CacheTexture();
+  if (CServiceBroker::GetTextureCache()->StartCacheImage(m_url))
+    return CacheTexture();
+
+  return false;
 }
 
 bool CTextureCacheJob::CacheTexture(std::unique_ptr<CTexture>* out_texture)
@@ -239,8 +240,10 @@ bool CTextureCacheJob::UpdateableURL(const std::string &url) const
 
 std::string CTextureCacheJob::GetImageHash(const std::string &url)
 {
-  // silently ignore - we cannot state these
-  if (URIUtils::IsProtocol(url,"addons") || URIUtils::IsProtocol(url,"plugin"))
+  // silently ignore - we cannot stat these
+  // in the case of upnp thumbs are/should be provided when filling the directory list, there's no reason to stat all object ids
+  if (URIUtils::IsProtocol(url, "addons") || URIUtils::IsProtocol(url, "plugin") ||
+      URIUtils::IsProtocol(url, "upnp"))
     return "";
 
   struct __stat64 st;

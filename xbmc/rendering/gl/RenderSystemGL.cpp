@@ -8,19 +8,22 @@
 
 #include "RenderSystemGL.h"
 
-#include "filesystem/File.h"
+#include "ServiceBroker.h"
+#include "URL.h"
 #include "guilib/GUITextureGL.h"
 #include "rendering/MatrixGL.h"
 #include "settings/AdvancedSettings.h"
-#include "settings/DisplaySettings.h"
+#include "settings/SettingsComponent.h"
+#include "utils/FileUtils.h"
 #include "utils/GLUtils.h"
 #include "utils/MathUtils.h"
-#include "utils/StringUtils.h"
-#include "utils/SystemInfo.h"
-#include "utils/TimeUtils.h"
 #include "utils/XTimeUtils.h"
 #include "utils/log.h"
-#include "windowing/GraphicContext.h"
+#include "windowing/WinSystem.h"
+
+#if defined(TARGET_LINUX)
+#include "utils/EGLUtils.h"
+#endif
 
 using namespace std::chrono_literals;
 
@@ -85,6 +88,34 @@ bool CRenderSystemGL::InitRenderSystem()
     m_glslMajor = 1;
     m_glslMinor = 0;
   }
+
+#if defined(GL_KHR_debug) && defined(TARGET_LINUX)
+  if (CServiceBroker::GetSettingsComponent()->GetAdvancedSettings()->m_openGlDebugging)
+  {
+    if (IsExtSupported("GL_KHR_debug"))
+    {
+      auto glDebugMessageCallback =
+          CEGLUtils::GetRequiredProcAddress<PFNGLDEBUGMESSAGECALLBACKPROC>(
+              "glDebugMessageCallback");
+      auto glDebugMessageControl =
+          CEGLUtils::GetRequiredProcAddress<PFNGLDEBUGMESSAGECONTROLPROC>("glDebugMessageControl");
+
+      glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+      glDebugMessageCallback(KODI::UTILS::GL::GlErrorCallback, nullptr);
+
+      // ignore shader compilation information
+      glDebugMessageControl(GL_DEBUG_SOURCE_SHADER_COMPILER, GL_DEBUG_TYPE_OTHER, GL_DONT_CARE, 0,
+                            nullptr, GL_FALSE);
+
+      CLog::Log(LOGDEBUG, "OpenGL: debugging enabled");
+    }
+    else
+    {
+      CLog::Log(LOGDEBUG, "OpenGL: debugging requested but the required extension isn't "
+                          "available (GL_KHR_debug)");
+    }
+  }
+#endif
 
   LogGraphicsInfo();
 
@@ -788,7 +819,7 @@ std::string CRenderSystemGL::GetShaderPath(const std::string &filename)
   {
     std::string file = "special://xbmc/system/shaders/GL/4.0/" + filename;
     const CURL pathToUrl(file);
-    if (XFILE::CFile::Exists(pathToUrl))
+    if (CFileUtils::Exists(pathToUrl.Get()))
       return "GL/4.0/";
   }
   if (m_glslMajor >= 2 || (m_glslMajor == 1 && m_glslMinor >= 50))

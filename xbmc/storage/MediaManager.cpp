@@ -35,12 +35,12 @@
 #include "addons/VFSEntry.h"
 #include "dialogs/GUIDialogKaiToast.h"
 #include "dialogs/GUIDialogPlayEject.h"
-#include "filesystem/File.h"
 #include "messaging/helpers/DialogOKHelper.h"
 #include "settings/AdvancedSettings.h"
 #include "settings/MediaSourceSettings.h"
 #include "settings/Settings.h"
 #include "settings/SettingsComponent.h"
+#include "utils/FileUtils.h"
 #include "utils/JobManager.h"
 #include "utils/StringUtils.h"
 #include "utils/XBMCTinyXML.h"
@@ -49,8 +49,6 @@
 
 #include <string>
 #include <vector>
-
-using namespace XFILE;
 
 #ifdef HAS_DVD_DRIVE
 using namespace MEDIA_DETECT;
@@ -201,7 +199,7 @@ void CMediaManager::GetNetworkLocations(VECSOURCES &locations, bool autolocation
     locations.push_back(share);
 #endif
 
-    if (CServiceBroker::IsBinaryAddonCacheUp())
+    if (CServiceBroker::IsAddonInterfaceUp())
     {
       for (const auto& addon : CServiceBroker::GetVFSAddonCache().GetAddonInstances())
       {
@@ -295,7 +293,7 @@ CMediaSource CMediaManager::GetRootAddonTypeSource(const std::string& type) cons
   }
   else if (type == "music")
   {
-    return ComputeRootAddonTypeSource("music", g_localizeStrings.Get(1038),
+    return ComputeRootAddonTypeSource("audio", g_localizeStrings.Get(1038),
                                       "DefaultAddonMusic.png");
   }
   else if (type == "pictures")
@@ -758,14 +756,14 @@ UTILS::DISCS::DiscInfo CMediaManager::GetDiscInfo(const std::string& mediaPath)
   }
 
   // check for DVD discs
-  if (XFILE::CFile::Exists(pathVideoTS))
+  if (CFileUtils::Exists(pathVideoTS))
   {
     info = UTILS::DISCS::ProbeDVDDiscInfo(pathVideoTS);
     if (!info.empty())
       return info;
   }
   // check for Blu-ray discs
-  if (XFILE::CFile::Exists(URIUtils::AddFileToFolder(mediaPath, "BDMV", "index.bdmv")))
+  if (CFileUtils::Exists(URIUtils::AddFileToFolder(mediaPath, "BDMV", "index.bdmv")))
   {
     info = UTILS::DISCS::ProbeBlurayDiscInfo(mediaPath);
   }

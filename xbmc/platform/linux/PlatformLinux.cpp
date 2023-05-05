@@ -8,6 +8,8 @@
 
 #include "PlatformLinux.h"
 
+#include "filesystem/SpecialProtocol.h"
+
 #if defined(HAS_ALSA)
 #include "cores/AudioEngine/Sinks/alsa/ALSADeviceMonitor.h"
 #include "cores/AudioEngine/Sinks/alsa/ALSAHControlMonitor.h"
@@ -60,6 +62,20 @@ bool CPlatformLinux::InitStageOne()
     return false;
 
   setenv("OS", "Linux", true); // for python scripts that check the OS
+
+#if defined(TARGET_WEBOS)
+  // WebOS ipks run in a chroot like environment. $HOME is set to the ipk dir and $LD_LIBRARY_PATH is lib
+  auto HOME = std::string(getenv("HOME"));
+  setenv("XDG_RUNTIME_DIR", "/tmp/xdg", 1);
+  setenv("XKB_CONFIG_ROOT", "/usr/share/X11/xkb", 1);
+  setenv("WAYLAND_DISPLAY", "wayland-0", 1);
+  setenv("PYTHONHOME", HOME.append("/lib/python3").c_str(), 1);
+  setenv("PYTHONPATH", HOME.append("/lib/python3").c_str(), 1);
+  setenv("PYTHONIOENCODING", "UTF-8", 1);
+  setenv("KODI_HOME", HOME.c_str(), 1);
+  setenv("SSL_CERT_FILE",
+         CSpecialProtocol::TranslatePath("special://xbmc/system/certs/cacert.pem").c_str(), 1);
+#endif
 
 #if defined(HAS_GLES)
 #if defined(HAVE_WAYLAND)
@@ -114,9 +130,9 @@ bool CPlatformLinux::InitStageOne()
   }
   else
   {
-    if (!OPTIONALS::PulseAudioRegister())
+    if (!OPTIONALS::PipewireRegister())
     {
-      if (!OPTIONALS::PipewireRegister())
+      if (!OPTIONALS::PulseAudioRegister())
       {
         if (!OPTIONALS::ALSARegister())
         {
@@ -129,12 +145,12 @@ bool CPlatformLinux::InitStageOne()
   m_lirc.reset(OPTIONALS::LircRegister());
 
 #if defined(HAS_ALSA)
-  RegisterService(std::make_shared<CFDEventMonitor>());
+  RegisterComponent(std::make_shared<CFDEventMonitor>());
 #if defined(HAVE_LIBUDEV)
-  RegisterService(std::make_shared<CALSADeviceMonitor>());
+  RegisterComponent(std::make_shared<CALSADeviceMonitor>());
 #endif
 #if !defined(HAVE_X11)
-  RegisterService(std::make_shared<CALSAHControlMonitor>());
+  RegisterComponent(std::make_shared<CALSAHControlMonitor>());
 #endif
 #endif // HAS_ALSA
   return true;
@@ -144,12 +160,12 @@ void CPlatformLinux::DeinitStageOne()
 {
 #if defined(HAS_ALSA)
 #if !defined(HAVE_X11)
-  DeregisterService(typeid(CALSAHControlMonitor));
+  DeregisterComponent(typeid(CALSAHControlMonitor));
 #endif
 #if defined(HAVE_LIBUDEV)
-  DeregisterService(typeid(CALSADeviceMonitor));
+  DeregisterComponent(typeid(CALSADeviceMonitor));
 #endif
-  DeregisterService(typeid(CFDEventMonitor));
+  DeregisterComponent(typeid(CFDEventMonitor));
 #endif // HAS_ALSA
 }
 

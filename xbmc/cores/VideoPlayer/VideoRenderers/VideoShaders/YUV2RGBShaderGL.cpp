@@ -104,7 +104,8 @@ BaseYUV2RGBGLSLShader::BaseYUV2RGBGLSLShader(bool rect,
 
   VertexShader()->LoadSource("gl_yuv2rgb_vertex.glsl", m_defines);
 
-  CLog::Log(LOGDEBUG, "GL: BaseYUV2RGBGLSLShader: defines:\n{}", m_defines);
+  CLog::Log(LOGDEBUG, "GL: using shader format: {}", m_format);
+  CLog::Log(LOGDEBUG, "GL: using tonemap method: {}", toneMapMethod);
 
   m_convMatrix.SetDestinationColorPrimaries(dstPrimaries).SetSourceColorPrimaries(srcPrimaries);
 }
@@ -237,8 +238,10 @@ void BaseYUV2RGBGLSLShader::SetColParams(AVColorSpace colSpace, int bits, bool l
       .SetSourceTextureBitDepth(textureBits);
 }
 
-void BaseYUV2RGBGLSLShader::SetDisplayMetadata(bool hasDisplayMetadata, AVMasteringDisplayMetadata displayMetadata,
-                                               bool hasLightMetadata, AVContentLightMetadata lightMetadata)
+void BaseYUV2RGBGLSLShader::SetDisplayMetadata(bool hasDisplayMetadata,
+                                               const AVMasteringDisplayMetadata& displayMetadata,
+                                               bool hasLightMetadata,
+                                               AVContentLightMetadata lightMetadata)
 {
   m_hasDisplayMetadata = hasDisplayMetadata;
   m_displayMetadata = displayMetadata;

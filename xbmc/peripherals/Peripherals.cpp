@@ -12,6 +12,8 @@
 #include "EventScanner.h"
 #include "addons/AddonButtonMap.h"
 #include "addons/AddonManager.h"
+#include "addons/addoninfo/AddonInfo.h"
+#include "addons/addoninfo/AddonType.h"
 #include "addons/gui/GUIDialogAddonSettings.h"
 #include "addons/gui/GUIWindowAddonBrowser.h"
 #include "bus/PeripheralBus.h"
@@ -27,7 +29,6 @@
 #include "FileItem.h"
 #include "GUIUserMessages.h"
 #include "ServiceBroker.h"
-#include "Util.h"
 #include "bus/virtual/PeripheralBusAddon.h"
 #include "bus/virtual/PeripheralBusApplication.h"
 #include "devices/PeripheralBluetooth.h"
@@ -51,6 +52,7 @@
 #include "messaging/ApplicationMessenger.h"
 #include "messaging/ThreadMessage.h"
 #include "peripherals/dialogs/GUIDialogPeripherals.h"
+#include "settings/SettingAddon.h"
 #include "settings/Settings.h"
 #include "settings/SettingsComponent.h"
 #include "settings/lib/Setting.h"
@@ -456,7 +458,7 @@ bool CPeripherals::GetMappingForDevice(const CPeripheralBus& bus,
                 strProductId, mapping.m_strDeviceName,
                 PeripheralTypeTranslator::TypeToString(mapping.m_mappedTo));
       result.m_mappedType = mapping.m_mappedTo;
-      if (!mapping.m_strDeviceName.empty())
+      if (result.m_strDeviceName.empty() && !mapping.m_strDeviceName.empty())
         result.m_strDeviceName = mapping.m_strDeviceName;
       return true;
     }
@@ -614,6 +616,14 @@ void CPeripherals::GetSettingsFromMappingsFile(
         int iValue = currentNode->Attribute("value") ? atoi(currentNode->Attribute("value")) : 0;
         setting = std::make_shared<CSettingInt>(strKey, iLabelId, iValue, enums);
       }
+    }
+    else if (StringUtils::EqualsNoCase(strSettingsType, "addon"))
+    {
+      std::string addonFilter = XMLUtils::GetAttribute(currentNode, "addontype");
+      ADDON::AddonType addonType = ADDON::CAddonInfo::TranslateType(addonFilter);
+      std::string strValue = XMLUtils::GetAttribute(currentNode, "value");
+      setting = std::make_shared<CSettingAddon>(strKey, iLabelId, strValue);
+      static_cast<CSettingAddon&>(*setting).SetAddonType(addonType);
     }
     else
     {
@@ -968,13 +978,12 @@ void CPeripherals::OnSettingAction(const std::shared_ptr<const CSetting>& settin
   else if (settingId == CSettings::SETTING_INPUT_PERIPHERALLIBRARIES)
   {
     std::string strAddonId;
-    if (CGUIWindowAddonBrowser::SelectAddonID(ADDON::ADDON_PERIPHERALDLL, strAddonId, false, true,
-                                              true, false, true) == 1 &&
+    if (CGUIWindowAddonBrowser::SelectAddonID(ADDON::AddonType::PERIPHERALDLL, strAddonId, false,
+                                              true, true, false, true) == 1 &&
         !strAddonId.empty())
     {
       ADDON::AddonPtr addon;
-      if (CServiceBroker::GetAddonMgr().GetAddon(strAddonId, addon, ADDON::ADDON_UNKNOWN,
-                                                 ADDON::OnlyEnabled::CHOICE_YES))
+      if (CServiceBroker::GetAddonMgr().GetAddon(strAddonId, addon, ADDON::OnlyEnabled::CHOICE_YES))
         CGUIDialogAddonSettings::ShowForAddon(addon);
     }
   }

@@ -57,6 +57,8 @@ JsonRpcMethodMap CJSONServiceDescription::m_methodMaps[] = {
 
   { "Player.PlayPause",                             CPlayerOperations::PlayPause },
   { "Player.Stop",                                  CPlayerOperations::Stop },
+  { "Player.GetAudioDelay",                         CPlayerOperations::GetAudioDelay },
+  { "Player.SetAudioDelay",                         CPlayerOperations::SetAudioDelay },
   { "Player.SetSpeed",                              CPlayerOperations::SetSpeed },
   { "Player.Seek",                                  CPlayerOperations::Seek },
   { "Player.Move",                                  CPlayerOperations::Move },
@@ -900,7 +902,7 @@ JSONRPC_STATUS JSONSchemaTypeDefinition::Check(const CVariant& value,
       {
         CVariant::const_iterator_map iter;
         CVariant::const_iterator_map iterEnd = value.end_map();
-        for (iter = value.begin_map(); iter != iterEnd; iter++)
+        for (iter = value.begin_map(); iter != iterEnd; ++iter)
         {
           if (properties.find(iter->first) != properties.end())
             continue;

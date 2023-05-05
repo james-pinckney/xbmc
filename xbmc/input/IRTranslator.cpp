@@ -9,10 +9,10 @@
 #include "IRTranslator.h"
 
 #include "ServiceBroker.h"
-#include "filesystem/File.h"
 #include "input/remote/IRRemote.h"
 #include "profiles/ProfileManager.h"
 #include "settings/SettingsComponent.h"
+#include "utils/FileUtils.h"
 #include "utils/StringUtils.h"
 #include "utils/URIUtils.h"
 #include "utils/XBMCTinyXML.h"
@@ -31,14 +31,14 @@ void CIRTranslator::Load(const std::string& irMapName)
   bool success = false;
 
   std::string irMapPath = URIUtils::AddFileToFolder("special://xbmc/system/", irMapName);
-  if (XFILE::CFile::Exists(irMapPath))
+  if (CFileUtils::Exists(irMapPath))
     success |= LoadIRMap(irMapPath);
   else
     CLog::Log(LOGDEBUG, "CIRTranslator::Load - no system {} found, skipping", irMapName);
 
   irMapPath =
       CServiceBroker::GetSettingsComponent()->GetProfileManager()->GetUserDataItem(irMapName);
-  if (XFILE::CFile::Exists(irMapPath))
+  if (CFileUtils::Exists(irMapPath))
     success |= LoadIRMap(irMapPath);
   else
     CLog::Log(LOGDEBUG, "CIRTranslator::Load - no userdata {} found, skipping", irMapName);
@@ -52,7 +52,7 @@ bool CIRTranslator::LoadIRMap(const std::string& irMapPath)
   std::string remoteMapTag = URIUtils::GetFileName(irMapPath);
   size_t lastindex = remoteMapTag.find_last_of('.');
   if (lastindex != std::string::npos)
-    remoteMapTag = remoteMapTag.substr(0, lastindex);
+    remoteMapTag.resize(lastindex);
   StringUtils::ToLower(remoteMapTag);
 
   // Load our xml file, and fill up our mapping tables

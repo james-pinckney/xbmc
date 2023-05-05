@@ -22,6 +22,7 @@
 #define LEGAL_WIN32_COMPAT    1
 #define LEGAL_FATX            2
 
+class CFileItem;
 class CFileItemList;
 class CURL;
 
@@ -128,8 +129,7 @@ public:
    \param paramString the string to break up
    \param parameters the returned parameters
    */
-  static void SplitParams(const std::string &paramString, std::vector<std::string> &parameters);
-  static void SplitExecFunction(const std::string &execString, std::string &function, std::vector<std::string> &parameters);
+  static void SplitParams(const std::string& paramString, std::vector<std::string>& parameters);
   static int GetMatchingSource(const std::string& strPath, VECSOURCES& VECSOURCES, bool& bIsSourceName);
   static std::string TranslateSpecialSource(const std::string &strSpecial);
   static void DeleteDirectoryCache(const std::string &prefix = "");

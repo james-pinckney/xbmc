@@ -25,23 +25,22 @@
 #endif
 #if defined(TARGET_ANDROID)
 #include <androidjni/ApplicationInfo.h>
-#include "platform/android/bionic_supplement/bionic_supplement.h"
 #include "platform/android/activity/XBMCApp.h"
 #include "CompileInfo.h"
 #endif
-#include <stdlib.h>
-#include <algorithm>
-#include <array>
-
-#include "addons/VFSEntry.h"
 #include "ServiceBroker.h"
 #include "Util.h"
-#include "filesystem/PVRDirectory.h"
+#include "addons/VFSEntry.h"
 #include "filesystem/Directory.h"
-#include "filesystem/StackDirectory.h"
 #include "filesystem/MultiPathDirectory.h"
-#include "filesystem/SpecialProtocol.h"
+#include "filesystem/PVRDirectory.h"
 #include "filesystem/RSSDirectory.h"
+#include "filesystem/SpecialProtocol.h"
+#include "filesystem/StackDirectory.h"
+
+#include <algorithm>
+#include <array>
+#include <stdlib.h>
 #ifdef HAS_UPNP
 #include "filesystem/UPnPDirectory.h"
 #endif
@@ -418,7 +417,7 @@ void CUtil::CleanString(const std::string& strFileName,
     }
     int j=0;
     if ((j=reTags.RegFind(strTitleAndYear.c_str())) > 0)
-      strTitleAndYear = strTitleAndYear.substr(0, j);
+      strTitleAndYear.resize(j);
   }
 
   // final cleanup - special characters used instead of spaces:
@@ -889,7 +888,7 @@ bool CUtil::CreateDirectoryEx(const std::string& strPath)
     return false;
   std::string dir(dirs.front());
   URIUtils::AddSlashAtEnd(dir);
-  for (std::vector<std::string>::const_iterator it = dirs.begin() + 1; it != dirs.end(); it ++)
+  for (std::vector<std::string>::const_iterator it = dirs.begin() + 1; it != dirs.end(); ++it)
   {
     dir = URIUtils::AddFileToFolder(dir, *it);
     CDirectory::Create(dir);
@@ -941,7 +940,7 @@ std::string CUtil::MakeLegalPath(const std::string &strPathAndFile, int LegalTyp
   // "protocol://domain"
   std::string dir(dirs.front());
   URIUtils::AddSlashAtEnd(dir);
-  for (std::vector<std::string>::const_iterator it = dirs.begin() + 1; it != dirs.end(); it ++)
+  for (std::vector<std::string>::const_iterator it = dirs.begin() + 1; it != dirs.end(); ++it)
     dir = URIUtils::AddFileToFolder(dir, MakeLegalFileName(*it, LegalType));
   if (trailingSlash) URIUtils::AddSlashAtEnd(dir);
   return dir;
@@ -1004,26 +1003,6 @@ std::string CUtil::ValidatePath(const std::string &path, bool bFixDoubleSlashes 
   return result;
 }
 
-void CUtil::SplitExecFunction(const std::string &execString, std::string &function, std::vector<std::string> &parameters)
-{
-  std::string paramString;
-
-  size_t iPos = execString.find('(');
-  size_t iPos2 = execString.rfind(')');
-  if (iPos != std::string::npos && iPos2 != std::string::npos)
-  {
-    paramString = execString.substr(iPos + 1, iPos2 - iPos - 1);
-    function = execString.substr(0, iPos);
-  }
-  else
-    function = execString;
-
-  // remove any whitespace, and the standard prefix (if it exists)
-  StringUtils::Trim(function);
-
-  SplitParams(paramString, parameters);
-}
-
 void CUtil::SplitParams(const std::string &paramString, std::vector<std::string> &parameters)
 {
   bool inQuotes = false;
@@ -1061,7 +1040,7 @@ void CUtil::SplitParams(const std::string &paramString, std::vector<std::string>
       if (!inFunction && ch == ',')
       { // not in a function, so a comma signifies the end of this parameter
         if (whiteSpacePos)
-          parameter = parameter.substr(0, whiteSpacePos);
+          parameter.resize(whiteSpacePos);
         // trim off start and end quotes
         if (parameter.length() > 1 && parameter[0] == '"' && parameter[parameter.length() - 1] == '"')
           parameter = parameter.substr(1, parameter.length() - 2);
@@ -1167,7 +1146,7 @@ int CUtil::GetMatchingSource(const std::string& strPath1, VECSOURCES& VECSOURCES
       // "Name (Drive Status/Disc Name)"
       size_t iPos = strName.rfind('(');
       if (iPos != std::string::npos && iPos > 1)
-        strName = strName.substr(0, iPos - 1);
+        strName.resize(iPos - 1);
     }
     if (StringUtils::EqualsNoCase(strPath, strName))
     {
@@ -1486,8 +1465,7 @@ bool CUtil::SupportsWriteFileOperations(const std::string& strPath)
   if (URIUtils::IsMultiPath(strPath))
     return CMultiPathDirectory::SupportsWriteFileOperations(strPath);
 
-
-  if (CServiceBroker::IsBinaryAddonCacheUp())
+  if (CServiceBroker::IsAddonInterfaceUp())
   {
     CURL url(strPath);
     for (const auto& addon : CServiceBroker::GetVFSAddonCache().GetAddonInstances())

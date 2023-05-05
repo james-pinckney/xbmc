@@ -11,19 +11,18 @@
 #include "ServiceBroker.h"
 #include "TextureDatabase.h"
 #include "ThumbLoader.h"
-#include "UPnP.h"
 #include "UPnPServer.h"
 #include "URL.h"
 #include "Util.h"
-#include "filesystem/File.h"
 #include "filesystem/MusicDatabaseDirectory.h"
 #include "filesystem/StackDirectory.h"
 #include "filesystem/VideoDatabaseDirectory.h"
-#include "music/MusicDatabase.h"
 #include "music/tags/MusicInfoTag.h"
 #include "settings/AdvancedSettings.h"
 #include "settings/Settings.h"
 #include "settings/SettingsComponent.h"
+#include "settings/lib/Setting.h"
+#include "utils/Base64.h"
 #include "utils/ContentUtils.h"
 #include "utils/LangCodeExpander.h"
 #include "utils/StringUtils.h"
@@ -32,6 +31,8 @@
 #include "video/VideoInfoTag.h"
 
 #include <algorithm>
+#include <array>
+#include <string_view>
 
 #include <Platinum/Source/Platinum/Platinum.h>
 
@@ -40,6 +41,30 @@ using namespace XFILE;
 
 namespace UPNP
 {
+
+// the original version of content type here,eg: text/srt,which was defined 10 years ago (year 2013,commit 56519bec #L1158-L1161 )
+// is not a standard mime type. according to the specs of UPNP
+// http://upnp.org/specs/av/UPnP-av-ConnectionManager-v3-Service.pdf chapter "A.1.1 ProtocolInfo Definition"
+// "The <contentFormat> part for HTTP GET is described by a MIME type RFC https://www.ietf.org/rfc/rfc1341.txt"
+// all the pre-defined "text/*" MIME by IANA is here https://www.iana.org/assignments/media-types/media-types.xhtml#text
+// there is not any subtitle MIME for now (year 2022), we used to use text/srt|ssa|sub|idx, but,
+// kodi support SUP subtitle now, and SUP subtitle is not really a text(see below), to keep it
+// compatible, we suggest only to match the extension
+//
+// main purpose of this array is to share supported real subtitle formats when kodi act as a UPNP
+// server or UPNP/DLNA media render
+constexpr std::array<std::string_view, 9> SupportedSubFormats = {
+    "txt", "srt", "ssa", "ass", "sub", "smi", "vtt",
+    // "sup" subtitle is not a real TEXT,
+    // and there is no real STD subtitle RFC of DLNA,
+    // so we only match the extension of the "fake" content type
+    "sup", "idx"};
+
+// Map defining extensions for mimetypes not available in Platinum mimetype map
+// or that the application wants to override. These definitions take precedence
+// over all other possible mime type definitions.
+constexpr NPT_HttpFileRequestHandler_DefaultFileTypeMapEntry kodiPlatinumMimeTypeExtensions[] = {
+    {"m2ts", "video/vnd.dlna.mpeg-tts"}};
 
 /*----------------------------------------------------------------------
 |  GetClientQuirks
@@ -123,15 +148,32 @@ GetMimeType(const CFileItem& item,
 
     NPT_String mime;
 
-    /* We always use Platinum mime type first
-       as it is defined to map extension to DLNA compliant mime type
-       or custom according to context (who asked for it) */
-    if (!ext.IsEmpty()) {
+    if (!ext.IsEmpty())
+    {
+      /* We look first to our extensions/overrides of libplatinum mimetypes. If not found, fallback to
+         Platinum definitions.
+      */
+      const auto kodiOverrideMimeType = std::find_if(
+          std::begin(kodiPlatinumMimeTypeExtensions), std::end(kodiPlatinumMimeTypeExtensions),
+          [&](const auto& mimeTypeEntry) { return mimeTypeEntry.extension == ext; });
+      if (kodiOverrideMimeType != std::end(kodiPlatinumMimeTypeExtensions))
+      {
+        mime = kodiOverrideMimeType->mime_type;
+      }
+      else
+      {
+        /* Give priority to Platinum mime types as they are defined to map extension to DLNA compliant mime types
+               or custom types according to context (who asked for it)
+        */
         mime = PLT_MimeType::GetMimeTypeFromExtension(ext, context);
-        if (mime == "application/octet-stream") mime = "";
+        if (mime == "application/octet-stream")
+        {
+          mime = "";
+        }
+      }
     }
 
-    /* if Platinum couldn't map it, default to XBMC mapping */
+    /* if Platinum couldn't map it, default to Kodi internal mapping */
     if (mime.IsEmpty()) {
         NPT_String mime = item.GetMimeType().c_str();
         if (mime == "application/octet-stream") mime = "";
@@ -237,7 +279,7 @@ PopulateObjectFromTag(CMusicInfoTag&         tag,
       object.m_Creator = tag.GetAlbumArtistString().c_str();
     object.m_MiscInfo.original_track_number = tag.GetTrackNumber();
     if(tag.GetDatabaseId() >= 0) {
-      object.m_ReferenceID = NPT_String::Format("musicdb://songs/%i%s", tag.GetDatabaseId(), URIUtils::GetExtension(tag.GetURL()).c_str());
+       object.m_ReferenceID = EncodeObjectId(StringUtils::Format("musicdb://songs/{}{}", tag.GetDatabaseId(), URIUtils::GetExtension(tag.GetURL())));
     }
     if (object.m_ReferenceID == object.m_ObjectID)
         object.m_ReferenceID = "";
@@ -273,12 +315,12 @@ PopulateObjectFromTag(CVideoInfoTag&         tag,
           object.m_Affiliation.album = tag.m_strAlbum.c_str();
           object.m_Title = tag.m_strTitle.c_str();
           object.m_Date = tag.GetPremiered().GetAsW3CDate().c_str();
-          object.m_ReferenceID = NPT_String::Format("videodb://musicvideos/titles/%i", tag.m_iDbId);
+          object.m_ReferenceID = EncodeObjectId(StringUtils::Format("videodb://musicvideos/titles/{}", tag.m_iDbId));
         } else if (tag.m_type == MediaTypeMovie) {
           object.m_ObjectClass.type = "object.item.videoItem.movie";
           object.m_Title = tag.m_strTitle.c_str();
           object.m_Date = tag.GetPremiered().GetAsW3CDate().c_str();
-          object.m_ReferenceID = NPT_String::Format("videodb://movies/titles/%i", tag.m_iDbId);
+          object.m_ReferenceID = EncodeObjectId(StringUtils::Format("videodb://movies/titles/{}", tag.m_iDbId));
         } else {
           object.m_Recorded.series_title = tag.m_strShowTitle.c_str();
 
@@ -291,7 +333,7 @@ PopulateObjectFromTag(CVideoInfoTag&         tag,
                   object.m_Date = CDateTime(tag.GetYear(), 1, 1, 0, 0, 0).GetAsW3CDate().c_str();
               else
                   object.m_Date = tag.m_premiered.GetAsW3CDate().c_str();
-              object.m_ReferenceID = NPT_String::Format("videodb://tvshows/titles/%i", tag.m_iDbId);
+              object.m_ReferenceID = EncodeObjectId(StringUtils::Format("videodb://tvshows/titles/{}", tag.m_iDbId));
           } else if (tag.m_type == MediaTypeSeason) {
               object.m_ObjectClass.type = "object.container.album.videoAlbum.videoBroadcastSeason";
               object.m_Title = tag.m_strTitle.c_str();
@@ -301,7 +343,7 @@ PopulateObjectFromTag(CVideoInfoTag&         tag,
                   object.m_Date = CDateTime(tag.GetYear(), 1, 1, 0, 0, 0).GetAsW3CDate().c_str();
               else
                   object.m_Date = tag.m_premiered.GetAsW3CDate().c_str();
-              object.m_ReferenceID = NPT_String::Format("videodb://tvshows/titles/%i/%i", tag.m_iIdShow, tag.m_iSeason);
+              object.m_ReferenceID = EncodeObjectId(StringUtils::Format("videodb://tvshows/titles/{}/{}", tag.m_iIdShow, tag.m_iSeason));
           } else {
               object.m_ObjectClass.type = "object.item.videoItem.videoBroadcast";
               object.m_Recorded.program_title  = "S" + ("0" + NPT_String::FromInteger(tag.m_iSeason)).Right(2);
@@ -310,7 +352,7 @@ PopulateObjectFromTag(CVideoInfoTag&         tag,
               object.m_Recorded.episode_number = tag.m_iEpisode;
               object.m_Recorded.episode_season = tag.m_iSeason;
               object.m_Title = object.m_Recorded.series_title + " - " + object.m_Recorded.program_title;
-              object.m_ReferenceID = NPT_String::Format("videodb://tvshows/titles/%i/%i/%i", tag.m_iIdShow, tag.m_iSeason, tag.m_iDbId);
+              object.m_ReferenceID = EncodeObjectId(StringUtils::Format("videodb://tvshows/titles/{}/{}/{}", tag.m_iIdShow, tag.m_iSeason, tag.m_iDbId));
               object.m_Date = tag.m_firstAired.GetAsW3CDate().c_str();
           }
         }
@@ -336,7 +378,8 @@ PopulateObjectFromTag(CVideoInfoTag&         tag,
     for (unsigned int index = 0; index < tag.m_genre.size(); index++)
       object.m_Affiliation.genres.Add(tag.m_genre.at(index).c_str());
 
-    for(CVideoInfoTag::iCast it = tag.m_cast.begin();it != tag.m_cast.end();it++) {
+    for (CVideoInfoTag::iCast it = tag.m_cast.begin(); it != tag.m_cast.end(); ++it)
+    {
         object.m_People.actors.Add(it->strName.c_str(), it->strRole.c_str());
     }
 
@@ -383,7 +426,7 @@ BuildObject(CFileItem&                    item,
   PLT_MediaObject* object = NULL;
   std::string thumb;
 
-  logger->debug("Building didl for object '{}'", item.GetPath());
+  logger->debug("Building didl for plain object '{}' (encoded value: '{}')", item.GetPath(), EncodeObjectId(item.GetPath()).GetChars());
 
   auto settingsComponent = CServiceBroker::GetSettingsComponent();
   if (!settingsComponent)
@@ -414,7 +457,7 @@ BuildObject(CFileItem&                    item,
 
     if (!item.m_bIsFolder) {
         object = new PLT_MediaItem();
-        object->m_ObjectID = item.GetPath().c_str();
+        object->m_ObjectID = EncodeObjectId(item.GetPath());
 
         /* Setup object type */
         if (item.IsMusicDb() || item.IsAudio()) {
@@ -480,14 +523,14 @@ BuildObject(CFileItem&                    item,
 
         // Some upnp clients expect all audio items to have parent root id 4
 #ifdef WMP_ID_MAPPING
-        object->m_ParentID = "4";
+        object->m_ParentID = EncodeObjectId("4");
 #endif
     } else {
         PLT_MediaContainer* container = new PLT_MediaContainer;
         object = container;
 
         /* Assign a title and id for this container */
-        container->m_ObjectID = item.GetPath().c_str();
+        container->m_ObjectID = EncodeObjectId(item.GetPath());
         container->m_ObjectClass.type = "object.container";
         container->m_ChildrenCount = -1;
 
@@ -506,7 +549,7 @@ BuildObject(CFileItem&                    item,
                       }
 #ifdef WMP_ID_MAPPING
                       // Some upnp clients expect all artists to have parent root id 107
-                      container->m_ParentID = "107";
+                      container->m_ParentID = EncodeObjectId("107");
 #endif
                   }
                   break;
@@ -524,7 +567,7 @@ BuildObject(CFileItem&                    item,
                       }
 #ifdef WMP_ID_MAPPING
                       // Some upnp clients expect all albums to have parent root id 7
-                      container->m_ParentID = "7";
+                      container->m_ParentID = EncodeObjectId("7");
 #endif
                   }
                   break;
@@ -578,7 +621,8 @@ BuildObject(CFileItem&                    item,
 
         /* Get the number of children for this container */
         if (with_count && upnp_server) {
-            if (object->m_ObjectID.StartsWith("virtualpath://")) {
+            const NPT_String decodedObjectId = DecodeObjectId(object->m_ObjectID.GetChars());
+            if (StringUtils::StartsWithNoCase(decodedObjectId, "virtualpath://")) {
                 NPT_LargeSize count = 0;
                 NPT_CHECK_LABEL(NPT_File::GetSize(file_path, count), failure);
                 container->m_ChildrenCount = (NPT_Int32)count;
@@ -608,19 +652,22 @@ BuildObject(CFileItem&                    item,
         thumb = ContentUtils::GetPreferredArtImage(item);
 
         if (!thumb.empty()) {
-            PLT_AlbumArtInfo art;
-            art.uri = upnp_server->BuildSafeResourceUri(
-                rooturi,
-                (*ips.GetFirstItem()).ToString(),
-                CTextureUtils::GetWrappedImageURL(thumb).c_str());
-
-            // Set DLNA profileID by extension, defaulting to JPEG.
-            if (URIUtils::HasExtension(thumb, ".png")) {
-                art.dlna_profile = "PNG_TN";
-            } else {
-                art.dlna_profile = "JPEG_TN";
-            }
-            object->m_ExtraInfo.album_arts.Add(art);
+          PLT_AlbumArtInfo art;
+          // Set DLNA profileID by extension, defaulting to JPEG.
+          if (URIUtils::HasExtension(thumb, ".png"))
+          {
+            art.dlna_profile = "PNG_TN";
+          }
+          else
+          {
+            art.dlna_profile = "JPEG_TN";
+          }
+          // append /thumb to the safe resource uri to avoid clients flagging the item with
+          // the incorrect mimetype (derived from the file extension)
+          art.uri = upnp_server->BuildSafeResourceUri(
+              rooturi, (*ips.GetFirstItem()).ToString(),
+              std::string(CTextureUtils::GetWrappedImageURL(thumb) + "/thumb").c_str());
+          object->m_ExtraInfo.album_arts.Add(art);
         }
 
         for (const auto& itArtwork : item.GetArt())
@@ -658,10 +705,12 @@ BuildObject(CFileItem&                    item,
             std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
             /* Hardcoded check for extension is not the best way, but it can't be allowed to pass all
                subtitle extension (ex. rar or zip). There are the most popular extensions support by UPnP devices.*/
-            if (ext == "txt" || ext == "srt" || ext == "ssa" || ext == "ass" || ext == "sub" ||
-                ext == "smi" || ext == "vtt" || ext == "sup")
+            for (std::string_view type : SupportedSubFormats)
             {
+              if (type == ext)
+              {
                 subtitles.push_back(filenames[i]);
+              }
             }
         }
 
@@ -945,8 +994,8 @@ PopulateTagFromObject(CVideoInfoTag&         tag,
     return NPT_SUCCESS;
 }
 
-CFileItemPtr BuildObject(PLT_MediaObject* entry,
-                         UPnPService      upnp_service /* = UPnPServiceNone */)
+std::shared_ptr<CFileItem> BuildObject(PLT_MediaObject* entry,
+                                       UPnPService upnp_service /* = UPnPServiceNone */)
 {
   NPT_String ObjectClass = entry->m_ObjectClass.type.ToLowercase();
 
@@ -1014,8 +1063,8 @@ CFileItemPtr BuildObject(PLT_MediaObject* entry,
         UPNP::PopulateTagFromObject(*pItem->GetMusicInfoTag(), *entry, res, upnp_service);
 
     } else if(image) {
-        //CPictureInfoTag* tag = pItem->GetPictureInfoTag();
-
+      //! @todo fill pictureinfotag?
+      GetResource(entry, *pItem);
     }
   }
 
@@ -1137,34 +1186,41 @@ bool GetResource(const PLT_MediaObject* entry, CFileItem& item)
     if (resource.m_ProtocolInfo.GetContentType().Compare("application/octet-stream") != 0) {
       item.SetMimeType((const char*)resource.m_ProtocolInfo.GetContentType());
     }
+
+    // if this is an image fill the thumb of the item
+    if (StringUtils::StartsWithNoCase(resource.m_ProtocolInfo.GetContentType(), "image"))
+    {
+      item.SetArt("thumb", std::string(resource.m_Uri));
+    }
   } else {
     logger->error("invalid protocol info '{}'", (const char*)(resource.m_ProtocolInfo.ToString()));
   }
 
   // look for subtitles
-  unsigned subs = 0;
+  unsigned subIdx = 0;
+
   for(unsigned r = 0; r < entry->m_Resources.GetItemCount(); r++)
   {
     const PLT_MediaItemResource& res  = entry->m_Resources[r];
     const PLT_ProtocolInfo&      info = res.m_ProtocolInfo;
-    static const char* allowed[] = { "text/srt"
-      , "text/ssa"
-      , "text/sub"
-      , "text/idx" };
-    for(const char* const type : allowed)
+
+    for (std::string_view type : SupportedSubFormats)
     {
-      if(info.Match(PLT_ProtocolInfo("*", "*", type, "*")))
+      if (type == info.GetContentType().Split("/").GetLastItem()->GetChars())
       {
-        std::string prop = StringUtils::Format("subtitle:{}", ++subs);
+        ++subIdx;
+        logger->info("adding subtitle: #{}, type '{}', URI '{}'", subIdx, type,
+                     res.m_Uri.GetChars());
+
+        std::string prop = StringUtils::Format("subtitle:{}", subIdx);
         item.SetProperty(prop, (const char*)res.m_Uri);
-        break;
       }
     }
   }
   return true;
 }
 
-CFileItemPtr GetFileItem(const NPT_String& uri, const NPT_String& meta)
+std::shared_ptr<CFileItem> GetFileItem(const NPT_String& uri, const NPT_String& meta)
 {
     PLT_MediaObjectListReference list;
     PLT_MediaObject*             object = NULL;
@@ -1185,6 +1241,61 @@ CFileItemPtr GetFileItem(const NPT_String& uri, const NPT_String& meta)
         item.reset(new CFileItem((const char*)uri, false));
     }
     return item;
+}
+
+NPT_String EncodeObjectId(const std::string& id)
+{
+  if (id.empty())
+  {
+    CLog::LogF(LOGWARNING, "Failed to encode object id, provided object id is empty");
+    return {};
+  }
+  // we use integers in some special cases like virtualpath://upnproot or whenever clients with
+  // quirks expect to receive integer ids for some parent containers
+  //! @todo all other items except upnproot and -1 (the parent of upnproot) seem to only be enabled
+  // if WMP_ID_MAPPING is defined which doesn't seem to happen anywhere in the code. Consider removing
+  // WMP_ID_MAPPING ifdef blocks in the future and reduce the scope of this comparison by including the
+  // actual used integer ids (0 and -1)
+  if (StringUtils::IsInteger(id))
+  {
+    return id.c_str();
+  }
+
+  return Base64::Encode(id).c_str();
+}
+
+NPT_String DecodeObjectId(const std::string& id)
+{
+  if (id.empty())
+  {
+    CLog::LogF(LOGWARNING, "Failed to decode object id, provided object id is empty");
+    return {};
+  }
+  // we use integers in some special cases like virtualpath://upnproot or whenever clients with
+  // quirks expect to receive integer ids for some parent containers
+  //! @todo all other items except upnproot and -1 (the parent of upnproot) seem to only be enabled
+  // if WMP_ID_MAPPING is defined which doesn't seem to happen anywhere in the code. Consider removing
+  // WMP_ID_MAPPING ifdef blocks in the future and reduce the scope of this comparison by including the
+  // actual used integer ids (0 and -1)
+  if (StringUtils::IsInteger(id))
+  {
+    return id.c_str();
+  }
+  // if the provided object id is a url (contains :// and thus not valid in the base64 dictionary)
+  // we are trying to decode a plain vfs path. In such cases, return the id as is for backward
+  // compatibility with external clients/tools relying on plain vfs paths
+  if (URIUtils::IsURL(id))
+  {
+    return id.c_str();
+  }
+  // otherwise try to decode the path
+  const std::string decodedObjectId = Base64::Decode(id);
+  if (decodedObjectId.empty())
+  {
+    CLog::LogF(LOGERROR, "Failed to decode object id {}, not properly Base64 encoded", decodedObjectId);
+  }
+
+  return decodedObjectId.c_str();
 }
 
 } /* namespace UPNP */

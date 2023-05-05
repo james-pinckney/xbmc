@@ -18,6 +18,7 @@
 #include <string>
 #include <vector>
 
+// clang-format off
 #define TMSG_MASK_MESSAGE                 0xFFFF0000 // only keep the high bits to route messages
 #define TMSG_MASK_APPLICATION             (1<<30) //Don't use bit 31 as it'll fail to build, using unsigned variable to hold the message.
 #define TMSG_MASK_PLAYLISTPLAYER          (1<<29)
@@ -83,6 +84,9 @@
 #define TMSG_RENDERER_UNINIT              TMSG_MASK_APPLICATION + 32
 #define TMSG_EVENT                        TMSG_MASK_APPLICATION + 33
 
+/// @brief Called from the player when its current item is updated
+#define TMSG_UPDATE_PLAYER_ITEM TMSG_MASK_APPLICATION + 35
+
 #define TMSG_GUI_INFOLABEL                TMSG_MASK_GUIINFOMANAGER + 0
 #define TMSG_GUI_INFOBOOL                 TMSG_MASK_GUIINFOMANAGER + 1
 #define TMSG_UPDATE_CURRENT_ITEM          TMSG_MASK_GUIINFOMANAGER + 2
@@ -133,8 +137,7 @@
 
 
 #define TMSG_CALLBACK                     800
-
-
+// clang-format on
 
 class CGUIMessage;
 

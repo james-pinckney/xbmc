@@ -56,11 +56,39 @@ function(get_versionfile_data)
   endif()
   set(${MODULE}_BYPRODUCT ${${MODULE}_BYPRODUCT} PARENT_SCOPE)
 
-  if (${MODULE}_HASH_SHA256)
-    set(${MODULE}_HASH ${${MODULE}_HASH_SHA256} PARENT_SCOPE)
-  elseif(${MODULE}_HASH_SHA512)
-    set(${MODULE}_HASH ${${MODULE}_HASH_SHA512} PARENT_SCOPE)
+  # allow user to override the download URL hash with a local tarball hash
+  # needed for offline build envs
+  if (NOT DEFINED ${MODULE}_HASH)
+    if (${MODULE}_HASH_SHA256)
+      set(${MODULE}_HASH ${${MODULE}_HASH_SHA256} PARENT_SCOPE)
+    elseif(${MODULE}_HASH_SHA512)
+      set(${MODULE}_HASH ${${MODULE}_HASH_SHA512} PARENT_SCOPE)
+    endif()
   endif()
+endfunction()
+
+# Parse and set Version from VERSION dependency file
+# Used for retrieving version numbers for dependency libs to allow setting
+# a required version for find_package call
+# On return:
+#   LIB_MODULENAME_VER will be set to parent scope (eg LIB_FMT_VER)
+function(get_libversion_data module libtype)
+
+  # Dependency path
+  set(LIB_MODULE_PATH "${CMAKE_SOURCE_DIR}/tools/depends/${libtype}/${module}")
+  string(TOUPPER ${module} MOD_UPPER)
+
+  if(NOT EXISTS "${LIB_MODULE_PATH}/${MOD_UPPER}-VERSION")
+    MESSAGE(FATAL_ERROR "${MOD_UPPER}-VERSION does not exist at ${LIB_MODULE_PATH}.")
+  else()
+    set(${MOD_UPPER}_FILE "${LIB_MODULE_PATH}/${MOD_UPPER}-VERSION")
+  endif()
+
+  file(STRINGS ${${MOD_UPPER}_FILE} ${MOD_UPPER}_VER REGEX "^[ \t]*VERSION=")
+
+  string(REGEX REPLACE ".*VERSION=([^ \t]*).*" "\\1" ${MOD_UPPER}_VER "${${MOD_UPPER}_VER}")
+
+  set(LIB_${MOD_UPPER}_VER ${${MOD_UPPER}_VER} PARENT_SCOPE)
 endfunction()
 
 # Function to loop through list of patch files (full path)
@@ -146,6 +174,7 @@ macro(CLEAR_BUILD_VARS)
   unset(INSTALL_COMMAND)
   unset(BUILD_IN_SOURCE)
   unset(BUILD_BYPRODUCTS)
+  unset(WIN_DISABLE_PROJECT_FLAGS)
 
   # unset all module specific variables to insure clean state between macro calls
   # potentially an issue when a native and a target of the same module exists
@@ -168,6 +197,13 @@ endmacro()
 # BUILD_IN_SOURCE: ALL(optional)
 # BUILD_BYPRODUCTS: ALL(optional)
 #
+# Windows Specific
+# WIN_DISABLE_PROJECT_FLAGS - Set to not use core compiler flags for externalproject_add target
+#                             This removes CMAKE_C_FLAGS CMAKE_CXX_FLAGS CMAKE_EXE_LINKER_FLAGS
+#                             from the externalproject_add target. Primarily used for HOST build
+#                             tools that may have different arch/build requirements to the core app
+#                             target (eg flatc)
+#
 macro(BUILD_DEP_TARGET)
   include(ExternalProject)
 
@@ -187,6 +223,18 @@ macro(BUILD_DEP_TARGET)
                              -DCMAKE_INSTALL_LIBDIR=lib
                              -DPROJECTSOURCE=${PROJECTSOURCE}
                              "-DCMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}")
+
+    # We dont have a toolchain for windows, so manually add all the cmake
+    # build arguments we may want
+    # We can disable adding them with WIN_DISABLE_PROJECT_FLAGS. This is potentially required
+    # for host build tools (eg flatc) that may be a different arch to the core app
+    if(WIN32 OR WINDOWS_STORE)
+      if(NOT DEFINED WIN_DISABLE_PROJECT_FLAGS)
+        list(APPEND CMAKE_ARGS "-DCMAKE_C_FLAGS=${CMAKE_C_FLAGS} $<$<CONFIG:Debug>:${CMAKE_C_FLAGS_DEBUG}> $<$<CONFIG:Release>:${CMAKE_C_FLAGS_RELEASE}> ${${MODULE}_C_FLAGS}"
+                               "-DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS} $<$<CONFIG:Debug>:${CMAKE_CXX_FLAGS_DEBUG}> $<$<CONFIG:Release>:${CMAKE_CXX_FLAGS_RELEASE}> ${${MODULE}_CXX_FLAGS}"
+                               "-DCMAKE_EXE_LINKER_FLAGS=${CMAKE_EXE_LINKER_FLAGS} $<$<CONFIG:Debug>:${CMAKE_EXE_LINKER_FLAGS_DEBUG}> $<$<CONFIG:Release>:${CMAKE_EXE_LINKER_FLAGS_RELEASE}> ${${MODULE}_EXE_LINKER_FLAGS}")
+      endif()
+    endif()
 
     if(${MODULE}_INSTALL_PREFIX)
       list(APPEND CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${${MODULE}_INSTALL_PREFIX})
@@ -212,19 +260,15 @@ macro(BUILD_DEP_TARGET)
         unset(${MODULE}_LIBRARY_RELEASE)
       endif()
     else()
-      if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.20")
-        list(APPEND CMAKE_ARGS "-DCMAKE_BUILD_TYPE=$<IF:$<CONFIG:Debug,RelWithDebInfo>,Debug,Release>")
+      # single config generator (ie Make, Ninja)
+      if(CMAKE_BUILD_TYPE)
+        list(APPEND CMAKE_ARGS "-DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}")
       else()
-        # single config generator (ie Make, Ninja)
-        if(CMAKE_BUILD_TYPE)
-          list(APPEND CMAKE_ARGS "-DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}")
-        else()
-          # Multi-config generators (eg VS, Xcode, Ninja Multi-Config) will not have CMAKE_BUILD_TYPE
-          # Use config genex to generate the types
-          # Potential issue if Build type isnt supported by lib project
-          # eg lib supports Debug/Release, however users selects RelWithDebInfo in project
-          list(APPEND CMAKE_ARGS "-DCMAKE_BUILD_TYPE=$<CONFIG>")
-        endif()
+        # Multi-config generators (eg VS, Xcode, Ninja Multi-Config) will not have CMAKE_BUILD_TYPE
+        # Use config genex to generate the types
+        # Potential issue if Build type isnt supported by lib project
+        # eg lib supports Debug/Release, however users selects RelWithDebInfo in project
+        list(APPEND CMAKE_ARGS "-DCMAKE_BUILD_TYPE=$<CONFIG>")
       endif()
     endif()
 

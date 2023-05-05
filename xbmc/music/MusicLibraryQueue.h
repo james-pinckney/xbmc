@@ -8,7 +8,6 @@
 
 #pragma once
 
-#include "FileItem.h"
 #include "settings/LibExportSettings.h"
 #include "threads/CriticalSection.h"
 #include "utils/JobManager.h"
@@ -131,6 +130,5 @@ private:
   CCriticalSection m_critical;
 
   bool m_modal = false;
-  bool m_exporting = false;
   bool m_cleaning = false;
 };

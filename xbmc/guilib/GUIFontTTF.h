@@ -204,19 +204,21 @@ protected:
    Accounts for spacing between lines to avoid characters overlapping.
    */
   unsigned int GetTextureLineHeight() const;
+  unsigned int GetMaxFontHeight() const;
 
   UTILS::COLOR::Color m_color{UTILS::COLOR::NONE};
 
-  Character* m_char{nullptr}; // our characters
+  std::vector<Character> m_char; // our characters
+
   // room for the first MAX_GLYPH_IDX glyphs in 7 styles
   Character* m_charquick[LOOKUPTABLE_SIZE]{nullptr};
-  int m_maxChars{0}; // size of character array (can be incremented)
-  int m_numChars{0}; // the current number of cached characters
 
+  bool m_ellipseCached{false};
   float m_ellipsesWidth{0.0f}; // this is used every character (width of '.')
 
   unsigned int m_cellBaseLine{0};
   unsigned int m_cellHeight{0};
+  unsigned int m_maxFontHeight{0};
 
   unsigned int m_nestedBeginCount{0}; // speedups
 

@@ -8,13 +8,22 @@
 
 find_program(CCACHE_PROGRAM ccache)
 
+if(CCACHE_PROGRAM)
+  execute_process(COMMAND "${CCACHE_PROGRAM}" --version
+                  OUTPUT_VARIABLE CCACHE_VERSION
+                  OUTPUT_STRIP_TRAILING_WHITESPACE)
+  string(REGEX MATCH "[^\n]* version [^\n]*" CCACHE_VERSION "${CCACHE_VERSION}")
+  string(REGEX REPLACE ".* version (.*)" "\\1" CCACHE_VERSION "${CCACHE_VERSION}")
+endif()
+
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(CCache REQUIRED_VARS CCACHE_PROGRAM)
+find_package_handle_standard_args(CCache REQUIRED_VARS CCACHE_PROGRAM
+                                  VERSION_VAR CCACHE_VERSION)
 
 if(CCACHE_FOUND)
   # Supports Unix Makefiles, Ninja and Xcode
-  set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}" CACHE STRING "" FORCE)
-  set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}" CACHE STRING "" FORCE)
+  set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}" PARENT_SCOPE)
+  set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}" PARENT_SCOPE)
 
   file(WRITE "${CMAKE_BINARY_DIR}/launch-c" "#!/bin/sh\nexec \"${CCACHE_PROGRAM}\" \"${CMAKE_C_COMPILER}\" \"$@\"\n")
   file(WRITE "${CMAKE_BINARY_DIR}/launch-cxx" "#!/bin/sh\nexec \"${CCACHE_PROGRAM}\" \"${CMAKE_CXX_COMPILER}\" \"$@\"\n")
@@ -25,3 +34,5 @@ if(CCACHE_FOUND)
   set(CMAKE_XCODE_ATTRIBUTE_LD "${CMAKE_BINARY_DIR}/launch-c" PARENT_SCOPE)
   set(CMAKE_XCODE_ATTRIBUTE_LDPLUSPLUS "${CMAKE_BINARY_DIR}/launch-cxx" PARENT_SCOPE)
 endif()
+
+mark_as_advanced(CCACHE_PROGRAM)

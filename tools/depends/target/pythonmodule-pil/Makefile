@@ -28,6 +28,8 @@ ifeq (darwin, $(findstring darwin, $(BUILD)))
   SED_FLAG=-i ''
 endif
 
+ZLIB_ROOT=$(PREFIX)
+
 ifeq (darwin, $(findstring darwin, $(HOST)))
   ifeq ($(CPU),arm64)
     # Work around an issue with xcode 11 stripping -arch arm64 flags.
@@ -36,9 +38,18 @@ ifeq (darwin, $(findstring darwin, $(HOST)))
     LDFLAGS+= -target arm64-apple-darwin
   endif
 
-  LDSHARED:=$(CC) -bundle -undefined dynamic_lookup $(LDFLAGS)
-  export ZLIB_ROOT=$(SDKROOT)/usr
+  ifneq ($(OS),android)
+    LDSHARED:=$(CC) -bundle -undefined dynamic_lookup $(LDFLAGS)
+    ZLIB_ROOT=$(SDKROOT)/usr
+  endif
 endif
+
+# Dependency roots. skip autodetecting and potentially adding native paths
+export JPEG_ROOT=$(PREFIX)
+export FREETYPE_ROOT=$(PREFIX)
+export HARFBUZZ_ROOT=$(PREFIX)
+export FRIBIDI_ROOT=$(PREFIX)
+export ZLIB_ROOT
 
 BUILD_OPTS=--plat-name $(OS)-$(CPU) --disable-jpeg2000 --disable-webp --disable-imagequant --disable-tiff --disable-webp --disable-webpmux --disable-xcb --disable-lcms --disable-platform-guessing
 
@@ -49,7 +60,7 @@ export LDSHARED LDFLAGS PYTHONPATH
 all: .installed-$(PLATFORM)
 
 
-$(PLATFORM): $(TARBALLS_LOCATION)/$(ARCHIVE).$(HASH_TYPE) $(DEPS)
+$(PLATFORM): $(DEPS) | $(TARBALLS_LOCATION)/$(ARCHIVE).$(HASH_TYPE)
 	rm -rf $(PLATFORM)/*; mkdir -p $(PLATFORM)
 	cd $(PLATFORM); $(ARCHIVE_TOOL) $(ARCHIVE_TOOL_FLAGS) $(TARBALLS_LOCATION)/$(ARCHIVE)
 	cd $(PLATFORM); patch -p1 -i ../pillow-crosscompile.patch

@@ -175,7 +175,7 @@ static void ParseItemMRSS(CFileItem* item, SResources& resources, TiXmlElement* 
     else if(scheme == "urn:boxee:season")
       vtag->m_iSeason  = atoi(text.c_str());
     else if(scheme == "urn:boxee:show-title")
-      vtag->m_strShowTitle = text.c_str();
+      vtag->m_strShowTitle = text;
     else if(scheme == "urn:boxee:view-count")
       vtag->SetPlayCount(atoi(text.c_str()));
     else if(scheme == "urn:boxee:source")
@@ -454,7 +454,7 @@ static void ParseItem(CFileItem* item, TiXmlElement* root, const std::string& pa
   SResources::iterator best = resources.end();
   for(const char** type = prio; *type && best == resources.end(); type++)
   {
-    for(SResources::iterator it = resources.begin(); it != resources.end(); it++)
+    for (SResources::iterator it = resources.begin(); it != resources.end(); ++it)
     {
       if(!StringUtils::StartsWith(it->mime, mime))
         continue;

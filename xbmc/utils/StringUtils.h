@@ -31,7 +31,7 @@
 #undef FMT_DEPRECATED
 #define FMT_DEPRECATED
 #endif
-#include "XBDateTime.h"
+#include "utils/TimeFormat.h"
 #include "utils/params_check_macros.h"
 
 #include <fmt/format.h>
@@ -354,6 +354,15 @@ public:
    \return Escaped/Paramified string
    */
   static std::string Paramify(const std::string &param);
+
+  /*! \brief Unescapes the given string.
+
+   Unescapes backslashes and double-quotes and removes double-quotes around the whole string.
+
+   \param param String to unescape/deparamify
+   \return Unescaped/Deparamified string
+   */
+  static std::string DeParamify(const std::string& param);
 
   /*! \brief Split a string by the specified delimiters.
    Splits a string using one or more delimiting characters, ignoring empty tokens.

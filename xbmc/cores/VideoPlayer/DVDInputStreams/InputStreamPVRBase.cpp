@@ -202,6 +202,7 @@ std::vector<CDemuxStream*> CInputStreamPVRBase::GetStreams() const
 {
   std::vector<CDemuxStream*> streams;
 
+  streams.reserve(m_streamMap.size());
   for (const auto& st : m_streamMap)
     streams.emplace_back(st.second.get());
 
@@ -321,7 +322,7 @@ void CInputStreamPVRBase::UpdateStreamMap()
 
       if (stream.iSubtitleInfo)
       {
-        streamSubtitle->ExtraData = new uint8_t[4];
+        streamSubtitle->ExtraData = std::make_unique<uint8_t[]>(4);
         streamSubtitle->ExtraSize = 4;
         streamSubtitle->ExtraData[0] = (stream.iSubtitleInfo >> 8) & 0xff;
         streamSubtitle->ExtraData[1] = (stream.iSubtitleInfo >> 0) & 0xff;
@@ -342,6 +343,17 @@ void CInputStreamPVRBase::UpdateStreamMap()
         streamRadioRDS = std::make_shared<CDemuxStreamRadioRDS>();
 
       dStream = streamRadioRDS;
+    }
+    else if (stream.iCodecType == PVR_CODEC_TYPE_ID3)
+    {
+      std::shared_ptr<CDemuxStreamAudioID3> streamAudioID3;
+
+      if (dStream)
+        streamAudioID3 = std::dynamic_pointer_cast<CDemuxStreamAudioID3>(dStream);
+      if (!streamAudioID3)
+        streamAudioID3 = std::make_shared<CDemuxStreamAudioID3>();
+
+      dStream = std::move(streamAudioID3);
     }
     else
       dStream = std::make_shared<CDemuxStream>();

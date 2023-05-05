@@ -8,14 +8,11 @@
 
 #include "SettingConditions.h"
 
-#include "AppParams.h"
 #include "LockType.h"
-#include "Util.h"
 #include "addons/AddonManager.h"
 #include "addons/Skin.h"
-#if defined(TARGET_ANDROID)
-#include "platform/android/activity/AndroidFeatures.h"
-#endif // defined(TARGET_ANDROID)
+#include "addons/addoninfo/AddonType.h"
+#include "application/AppParams.h"
 #include "cores/AudioEngine/Engines/ActiveAE/ActiveAESettings.h"
 #include "ServiceBroker.h"
 #include "GUIPassword.h"
@@ -51,10 +48,10 @@ bool AddonHasSettings(const std::string& condition,
       addon == NULL)
     return false;
 
-  if (addon->Type() == ADDON::ADDON_SKIN)
+  if (addon->Type() == ADDON::AddonType::SKIN)
     return ((ADDON::CSkinInfo*)addon.get())->HasSkinFile("SkinSettings.xml");
 
-  return addon->HasSettings();
+  return addon->CanHaveAddonOrInstanceSettings();
 }
 
 bool CheckMasterLock(const std::string& condition,
@@ -78,7 +75,7 @@ bool HasPeripheralLibraries(const std::string& condition,
                             const SettingConstPtr& setting,
                             void* data)
 {
-  return CServiceBroker::GetAddonMgr().HasInstalledAddons(ADDON::ADDON_PERIPHERALDLL);
+  return CServiceBroker::GetAddonMgr().HasInstalledAddons(ADDON::AddonType::PERIPHERALDLL);
 }
 
 bool HasRumbleFeature(const std::string& condition,
@@ -105,12 +102,20 @@ bool HasPowerOffFeature(const std::string& condition,
   return CServiceBroker::GetPeripherals().SupportsFeature(PERIPHERALS::FEATURE_POWER_OFF);
 }
 
-bool IsFullscreen(const std::string& condition,
-                  const std::string& value,
-                  const SettingConstPtr& setting,
-                  void* data)
+bool HasSystemSdrPeakLuminance(const std::string& condition,
+                               const std::string& value,
+                               const SettingConstPtr& setting,
+                               void* data)
 {
-  return CServiceBroker::GetWinSystem()->IsFullScreen();
+  return CServiceBroker::GetWinSystem()->HasSystemSdrPeakLuminance();
+}
+
+bool SupportsScreenMove(const std::string& condition,
+                        const std::string& value,
+                        const SettingConstPtr& setting,
+                        void* data)
+{
+  return CServiceBroker::GetWinSystem()->SupportsScreenMove();
 }
 
 bool IsHDRDisplay(const std::string& condition,
@@ -381,6 +386,9 @@ void CSettingConditions::Initialize()
 #ifdef HAS_FILESYSTEM_SMB
   m_simpleConditions.emplace("has_filesystem_smb");
 #endif
+#ifdef HAS_FILESYSTEM_NFS
+  m_simpleConditions.insert("has_filesystem_nfs");
+#endif
 #ifdef HAS_ZEROCONF
   m_simpleConditions.emplace("has_zeroconf");
 #endif
@@ -447,7 +455,8 @@ void CSettingConditions::Initialize()
   m_complexConditions.emplace("hasrumblefeature", HasRumbleFeature);
   m_complexConditions.emplace("hasrumblecontroller", HasRumbleController);
   m_complexConditions.emplace("haspowerofffeature", HasPowerOffFeature);
-  m_complexConditions.emplace("isfullscreen", IsFullscreen);
+  m_complexConditions.emplace("hassystemsdrpeakluminance", HasSystemSdrPeakLuminance);
+  m_complexConditions.emplace("supportsscreenmove", SupportsScreenMove);
   m_complexConditions.emplace("ishdrdisplay", IsHDRDisplay);
   m_complexConditions.emplace("ismasteruser", IsMasterUser);
   m_complexConditions.emplace("hassubtitlesfontextensions", HasSubtitlesFontExtensions);

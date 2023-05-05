@@ -11,11 +11,11 @@
 #include "ServiceBroker.h"
 #include "URL.h"
 #include "Util.h"
-#include "filesystem/File.h"
 #include "media/MediaLockState.h"
 #include "network/WakeOnAccess.h"
 #include "profiles/ProfileManager.h"
 #include "settings/SettingsComponent.h"
+#include "utils/FileUtils.h"
 #include "utils/StringUtils.h"
 #include "utils/URIUtils.h"
 #include "utils/XBMCTinyXML.h"
@@ -28,8 +28,6 @@
 #define SOURCES_FILE  "sources.xml"
 #define XML_SOURCES   "sources"
 #define XML_SOURCE    "source"
-
-using namespace XFILE;
 
 CMediaSourceSettings::CMediaSourceSettings()
 {
@@ -76,7 +74,7 @@ bool CMediaSourceSettings::Load(const std::string &file)
 {
   Clear();
 
-  if (!CFile::Exists(file))
+  if (!CFileUtils::Exists(file))
     return false;
 
   CLog::Log(LOGINFO, "CMediaSourceSettings: loading media sources from {}", file);
@@ -194,7 +192,7 @@ bool CMediaSourceSettings::UpdateSource(const std::string &strType, const std::s
   if (pShares == NULL)
     return false;
 
-  for (IVECSOURCES it = pShares->begin(); it != pShares->end(); it++)
+  for (IVECSOURCES it = pShares->begin(); it != pShares->end(); ++it)
   {
     if (it->strName == strOldName)
     {
@@ -232,7 +230,7 @@ bool CMediaSourceSettings::DeleteSource(const std::string &strType, const std::s
 
   bool found = false;
 
-  for (IVECSOURCES it = pShares->begin(); it != pShares->end(); it++)
+  for (IVECSOURCES it = pShares->begin(); it != pShares->end(); ++it)
   {
     if (it->strName == strName && it->strPath == strPath)
     {
@@ -294,7 +292,7 @@ bool CMediaSourceSettings::UpdateShare(const std::string &type, const std::strin
 
   // update our current share list
   CMediaSource* pShare = NULL;
-  for (IVECSOURCES it = pShares->begin(); it != pShares->end(); it++)
+  for (IVECSOURCES it = pShares->begin(); it != pShares->end(); ++it)
   {
     if (it->strName == oldName)
     {
@@ -471,7 +469,7 @@ bool CMediaSourceSettings::SetSources(TiXmlNode *root, const char *section, cons
     return false;
 
   XMLUtils::SetPath(sectionNode, "default", defaultPath);
-  for (CIVECSOURCES it = shares.begin(); it != shares.end(); it++)
+  for (CIVECSOURCES it = shares.begin(); it != shares.end(); ++it)
   {
     const CMediaSource &share = *it;
     if (share.m_ignore)

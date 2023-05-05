@@ -44,7 +44,6 @@
 #include "utils/URIUtils.h"
 #include "utils/Variant.h"
 #include "utils/log.h"
-#include "video/VideoLibraryQueue.h"
 #include "video/VideoThumbLoader.h"
 
 #include <algorithm>
@@ -87,7 +86,7 @@ namespace VIDEO
       if (m_bClean && m_pathsToScan.empty())
       {
         std::set<int> paths;
-        CVideoLibraryQueue::GetInstance().CleanLibrary(paths, false, m_handle);
+        m_database.CleanDatabase(m_handle, paths, false);
 
         if (m_handle)
           m_handle->MarkFinished();
@@ -145,7 +144,7 @@ namespace VIDEO
       if (!bCancelled)
       {
         if (m_bClean)
-          CVideoLibraryQueue::GetInstance().CleanLibrary(m_pathsToClean, false, m_handle);
+          m_database.CleanDatabase(m_handle, m_pathsToClean, false);
         else
         {
           if (m_handle)
@@ -1226,7 +1225,8 @@ namespace VIDEO
         int offset = 0;
 
         // we want "long circuit" OR below so that both offsets are evaluated
-        while (((regexp2pos = reg2.RegFind(remainder.c_str() + offset)) > -1) | ((regexppos = reg.RegFind(remainder.c_str() + offset)) > -1))
+        while (static_cast<int>((regexp2pos = reg2.RegFind(remainder.c_str() + offset)) > -1) |
+               static_cast<int>((regexppos = reg.RegFind(remainder.c_str() + offset)) > -1))
         {
           if (((regexppos <= regexp2pos) && regexppos != -1) ||
              (regexppos >= 0 && regexp2pos == -1))
@@ -2099,8 +2099,12 @@ namespace VIDEO
       int maxSeasons = 0;
       CFileItemList items;
       std::string extensions = CServiceBroker::GetFileExtensionProvider().GetPictureExtensions();
-      CDirectory::GetDirectory(show.m_strPath, items, extensions,
-        DIR_FLAG_NO_FILE_DIRS | DIR_FLAG_READ_CACHE | DIR_FLAG_NO_FILE_INFO);
+      if (!show.m_strPath.empty())
+      {
+        CDirectory::GetDirectory(show.m_strPath, items, extensions,
+                                 DIR_FLAG_NO_FILE_DIRS | DIR_FLAG_READ_CACHE |
+                                     DIR_FLAG_NO_FILE_INFO);
+      }
       extensions.erase(std::remove(extensions.begin(), extensions.end(), '.'), extensions.end());
       CRegExp reg;
       if (items.Size() && reg.RegComp("season([0-9]+)(-[a-z0-9]+)?\\.(" + extensions + ")"))

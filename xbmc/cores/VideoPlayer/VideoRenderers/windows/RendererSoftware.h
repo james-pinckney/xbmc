@@ -22,7 +22,7 @@ public:
   ~CRendererSoftware();
 
   bool Configure(const VideoPicture& picture, float fps, unsigned orientation) override;
-  bool Supports(ESCALINGMETHOD method) override;
+  bool Supports(ESCALINGMETHOD method) const override;
 
   static CRendererBase* Create(CVideoSettings& videoSettings);
   static void GetWeight(std::map<RenderMethod, int>& weights, const VideoPicture& picture);
@@ -35,6 +35,7 @@ protected:
 
 private:
   SwsContext* m_sw_scale_ctx = nullptr;
+  bool m_restoreMultithreadProtectedOff = false;
 };
 
 class CRendererSoftware::CRenderBufferImpl : public CRenderBuffer

@@ -14,6 +14,7 @@
 #include "guilib/GUIComponent.h"
 #include "guilib/GUIWindowManager.h"
 #include "messaging/ApplicationMessenger.h"
+#include "rendering/dx/DirectXHelper.h"
 #include "settings/Settings.h"
 #include "settings/SettingsComponent.h"
 #include "utils/SystemInfo.h"
@@ -342,8 +343,7 @@ void DX::DeviceResources::CreateDeviceResources()
     featureLevels.push_back(D3D_FEATURE_LEVEL_12_1);
     featureLevels.push_back(D3D_FEATURE_LEVEL_12_0);
   }
-  if (CSysInfo::IsWindowsVersionAtLeast(CSysInfo::WindowsVersionWin8))
-    featureLevels.push_back(D3D_FEATURE_LEVEL_11_1);
+  featureLevels.push_back(D3D_FEATURE_LEVEL_11_1);
   featureLevels.push_back(D3D_FEATURE_LEVEL_11_0);
   featureLevels.push_back(D3D_FEATURE_LEVEL_10_1);
   featureLevels.push_back(D3D_FEATURE_LEVEL_10_0);
@@ -371,23 +371,32 @@ void DX::DeviceResources::CreateDeviceResources()
 
   if (FAILED(hr))
   {
-    CLog::LogF(LOGERROR, "unable to create hardware device, trying to create WARP devices then.");
-    hr = D3D11CreateDevice(
-        nullptr,
-        D3D_DRIVER_TYPE_WARP, // Create a WARP device instead of a hardware device.
-        nullptr,
-        creationFlags,
-        featureLevels.data(),
-        featureLevels.size(),
-        D3D11_SDK_VERSION,
-        &device,
-        &m_d3dFeatureLevel,
-        &context
-    );
+    CLog::LogF(LOGERROR, "unable to create hardware device with video support, error {}",
+               DX::GetErrorDescription(hr));
+    CLog::LogF(LOGERROR, "trying to create hardware device without video support.");
+
+    creationFlags &= ~D3D11_CREATE_DEVICE_VIDEO_SUPPORT;
+
+    hr = D3D11CreateDevice(m_adapter.Get(), drivertType, nullptr, creationFlags,
+                           featureLevels.data(), featureLevels.size(), D3D11_SDK_VERSION, &device,
+                           &m_d3dFeatureLevel, &context);
+
     if (FAILED(hr))
     {
-      CLog::LogF(LOGFATAL, "unable to create WARP device. Rendering in not possible.");
-      CHECK_ERR();
+      CLog::LogF(LOGERROR, "unable to create hardware device, error {}",
+                 DX::GetErrorDescription(hr));
+      CLog::LogF(LOGERROR, "trying to create WARP device.");
+
+      hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, creationFlags,
+                             featureLevels.data(), featureLevels.size(), D3D11_SDK_VERSION, &device,
+                             &m_d3dFeatureLevel, &context);
+
+      if (FAILED(hr))
+      {
+        CLog::LogF(LOGFATAL, "unable to create WARP device. Rendering is not possible. Error {}",
+                   DX::GetErrorDescription(hr));
+        CHECK_ERR();
+      }
     }
   }
 
@@ -697,11 +706,24 @@ void DX::DeviceResources::ResizeBuffers()
     std::string flip =
         (swapChainDesc.SwapEffect == DXGI_SWAP_EFFECT_FLIP_DISCARD) ? "discard" : "sequential";
 
-    CLog::LogF(LOGINFO, "{} bit swapchain is used with {} flip {} buffers and {} output", bits,
-               swapChainDesc.BufferCount, flip, m_IsHDROutput ? "HDR" : "SDR");
+    CLog::LogF(LOGINFO,
+               "{} bit swapchain is used with {} flip {} buffers and {} output (format {})", bits,
+               swapChainDesc.BufferCount, flip, m_IsHDROutput ? "HDR" : "SDR",
+               DX::DXGIFormatToString(swapChainDesc.Format));
 
     hr = swapChain.As(&m_swapChain); CHECK_ERR();
     m_stereoEnabled = bHWStereoEnabled;
+
+    if (CServiceBroker::GetLogging().IsLogLevelLogged(LOGDEBUG))
+    {
+      std::string colorSpaces;
+      for (const DXGI_COLOR_SPACE_TYPE& colorSpace : GetSwapChainColorSpaces())
+      {
+        colorSpaces.append("\n");
+        colorSpaces.append(DX::DXGIColorSpaceTypeToString(colorSpace));
+      }
+      CLog::LogF(LOGDEBUG, "Color spaces supported by the swap chain:{}", colorSpaces);
+    }
 
     // Ensure that DXGI does not queue more than one frame at a time. This both reduces latency and
     // ensures that the application will only render after each VSync, minimizing power consumption.
@@ -1274,11 +1296,16 @@ void DX::DeviceResources::SetHdrColorSpace(const DXGI_COLOR_SPACE_TYPE colorSpac
     {
       m_IsTransferPQ = (colorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020);
 
-      CLog::LogF(LOGDEBUG, "DXGI SetColorSpace1 success");
+      if (m_IsTransferPQ)
+        DX::Windowing()->CacheSystemSdrPeakLuminance();
+
+      CLog::LogF(LOGDEBUG, "DXGI SetColorSpace1 {} success",
+                 DX::DXGIColorSpaceTypeToString(colorSpace));
     }
     else
     {
-      CLog::LogF(LOGERROR, "DXGI SetColorSpace1 failed");
+      CLog::LogF(LOGERROR, "DXGI SetColorSpace1 {} failed",
+                 DX::DXGIColorSpaceTypeToString(colorSpace));
     }
   }
 }
@@ -1288,9 +1315,10 @@ HDR_STATUS DX::DeviceResources::ToggleHDR()
   DXGI_MODE_DESC md = {};
   GetDisplayMode(&md);
 
-  // Toggle display HDR
+  DX::Windowing()->SetTogglingHDR(true);
   DX::Windowing()->SetAlteringWindow(true);
 
+  // Toggle display HDR
   HDR_STATUS hdrStatus = CWIN32Util::ToggleWindowsHDR(md);
 
   // Kill swapchain
@@ -1343,8 +1371,8 @@ DEBUG_INFO_RENDER DX::DeviceResources::GetDebugInfo() const
       "Swapchain: {} buffers, flip {}, {}, EOTF: {} (Windows HDR {})", desc.BufferCount,
       (desc.SwapEffect == DXGI_SWAP_EFFECT_FLIP_DISCARD) ? "discard" : "sequential",
       Windowing()->IsFullScreen()
-          ? ((desc.Flags == DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH) ? "fullscreen exclusive"
-                                                                    : "fullscreen windowed")
+          ? ((desc.Flags & DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH) ? "fullscreen exclusive"
+                                                                   : "fullscreen windowed")
           : "windowed screen",
       m_IsTransferPQ ? "PQ" : "SDR", m_IsHDROutput ? "on" : "off");
 
@@ -1357,4 +1385,43 @@ DEBUG_INFO_RENDER DX::DeviceResources::GetDebugInfo() const
       DX::Windowing()->UseLimitedColor() ? "limited" : "full", range_min, range_max);
 
   return info;
+}
+
+std::vector<DXGI_COLOR_SPACE_TYPE> DX::DeviceResources::GetSwapChainColorSpaces() const
+{
+  if (!m_swapChain)
+    return {};
+
+  std::vector<DXGI_COLOR_SPACE_TYPE> result;
+  HRESULT hr;
+
+  ComPtr<IDXGISwapChain3> swapChain3;
+  if (SUCCEEDED(hr = m_swapChain.As(&swapChain3)))
+  {
+    UINT colorSpaceSupport = 0;
+    for (UINT colorSpace = DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
+         colorSpace < DXGI_COLOR_SPACE_YCBCR_STUDIO_G24_TOPLEFT_P2020; colorSpace++)
+    {
+      DXGI_COLOR_SPACE_TYPE cs = static_cast<DXGI_COLOR_SPACE_TYPE>(colorSpace);
+      if (SUCCEEDED(swapChain3->CheckColorSpaceSupport(cs, &colorSpaceSupport)) &&
+          (colorSpaceSupport & DXGI_SWAP_CHAIN_COLOR_SPACE_SUPPORT_FLAG_PRESENT))
+        result.push_back(cs);
+    }
+  }
+  else
+  {
+    CLog::LogF(LOGDEBUG, "IDXGISwapChain3 is not available. Error {}", DX::GetErrorDescription(hr));
+  }
+  return result;
+}
+
+bool DX::DeviceResources::SetMultithreadProtected(bool enabled) const
+{
+  BOOL wasEnabled = FALSE;
+  ComPtr<ID3D11Multithread> multithread;
+  HRESULT hr = m_d3dDevice.As(&multithread);
+  if (SUCCEEDED(hr))
+    wasEnabled = multithread->SetMultithreadProtected(enabled ? TRUE : FALSE);
+
+  return (wasEnabled == TRUE ? true : false);
 }

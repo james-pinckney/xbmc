@@ -17,7 +17,6 @@ CFTPParse::CFTPParse()
   m_flagtrycwd = 0;
   m_flagtryretr = 0;
   m_size = 0;
-  m_time = 0;
 }
 
 std::string CFTPParse::getName()
@@ -411,7 +410,7 @@ int CFTPParse::FTPParse(const std::string& str)
       // handle symlink
       size_t found = m_name.find(" -> ");
       if (found != std::string::npos)
-        m_name = m_name.substr(0, found);
+        m_name.resize(found);
     }
     setTime(date);
 
@@ -443,7 +442,7 @@ int CFTPParse::FTPParse(const std::string& str)
       // handle symlink
       size_t found = m_name.find(" -> ");
       if (found != std::string::npos)
-        m_name = m_name.substr(0, found);
+        m_name.resize(found);
     }
     setTime(date);
 

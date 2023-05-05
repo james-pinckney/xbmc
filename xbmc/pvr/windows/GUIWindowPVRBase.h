@@ -62,7 +62,6 @@ namespace PVR
     bool Update(const std::string& strDirectory, bool updateFilterPath = true) override;
     void UpdateButtons() override;
     bool OnAction(const CAction& action) override;
-    bool OnBack(int actionID) override;
     void SetInvalid() override;
     bool CanBeActivated() const override;
 
@@ -112,9 +111,6 @@ namespace PVR
     void SetChannelGroup(std::shared_ptr<CPVRChannelGroup> &&group, bool bUpdate = true);
 
     virtual void UpdateSelectedItemPath();
-
-    void RegisterObservers();
-    void UnregisterObservers();
 
     CCriticalSection m_critSection;
     std::string m_channelGroupPath;

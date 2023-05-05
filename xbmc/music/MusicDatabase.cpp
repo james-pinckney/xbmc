@@ -40,6 +40,7 @@
 #include "interfaces/AnnouncementManager.h"
 #include "messaging/helpers/DialogHelper.h"
 #include "messaging/helpers/DialogOKHelper.h"
+#include "music/MusicDbUrl.h"
 #include "music/MusicLibraryQueue.h"
 #include "music/tags/MusicInfoTag.h"
 #include "network/Network.h"
@@ -3022,9 +3023,9 @@ void CMusicDatabase::GetFileItemFromDataset(const dbiplus::sql_record* const rec
   item->GetMusicInfoTag()->SetTitle(record->at(song_strTitle).get_asString());
   item->GetMusicInfoTag()->SetDiscSubtitle(record->at(song_strDiscSubtitle).get_asString());
   item->SetLabel(record->at(song_strTitle).get_asString());
-  item->m_lStartOffset = record->at(song_iStartOffset).get_asInt64();
-  item->SetProperty("item_start", item->m_lStartOffset);
-  item->m_lEndOffset = record->at(song_iEndOffset).get_asInt64();
+  item->SetStartOffset(record->at(song_iStartOffset).get_asInt64());
+  item->SetProperty("item_start", item->GetStartOffset());
+  item->SetEndOffset(record->at(song_iEndOffset).get_asInt64());
   item->GetMusicInfoTag()->SetMusicBrainzTrackID(
       record->at(song_strMusicBrainzTrackID).get_asString());
   item->GetMusicInfoTag()->SetRating(record->at(song_rating).get_asFloat());
@@ -4596,12 +4597,12 @@ bool CMusicDatabase::TrimImageURLs(std::string& strImage, const size_t space)
 {
   if (strImage.length() > space)
   {
-    strImage = strImage.substr(0, space);
+    strImage.resize(space);
     // Tidy to last </thumb> tag
     size_t iPos = strImage.rfind("</thumb>");
     if (iPos == std::string::npos)
       return false;
-    strImage = strImage.substr(0, iPos + 8);
+    strImage.resize(iPos + 8);
   }
   return true;
 }
@@ -5567,7 +5568,7 @@ bool CMusicDatabase::GetAlbumFromSong(int idSong, CAlbum& album)
     if (nullptr == m_pDS)
       return false;
 
-    std::string strSQL = PrepareSQL("SELECT albumview.* FROM song"
+    std::string strSQL = PrepareSQL("SELECT albumview.* FROM song "
                                     "JOIN albumview on song.idAlbum = albumview.idAlbum "
                                     "WHERE song.idSong='%i'",
                                     idSong);
@@ -11593,7 +11594,7 @@ bool CMusicDatabase::GetScraper(int id, const CONTENT_TYPE& content, ADDON::Scra
       // Use pre configured or default scraper
       ADDON::AddonPtr addon;
       if (!scraperUUID.empty() &&
-          CServiceBroker::GetAddonMgr().GetAddon(scraperUUID, addon, ADDON::ADDON_UNKNOWN,
+          CServiceBroker::GetAddonMgr().GetAddon(scraperUUID, addon,
                                                  ADDON::OnlyEnabled::CHOICE_YES) &&
           addon)
       {

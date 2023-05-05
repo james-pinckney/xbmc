@@ -17,6 +17,11 @@
 class CViewState; // forward
 class CFileItemList;
 
+namespace PLAYLIST
+{
+using Id = int;
+} // namespace PLAYLIST
+
 class CGUIViewState
 {
 public:
@@ -36,6 +41,8 @@ public:
   int GetSortOrderLabel() const;
   void GetSortMethodLabelMasks(LABEL_MASKS& masks) const;
 
+  std::vector<SortDescription> GetSortDescriptions() const;
+
   SortOrder SetNextSortOrder();
   SortOrder GetSortOrder() const;
 
@@ -43,7 +50,7 @@ public:
   virtual bool HideParentDirItems();
   virtual bool DisableAddSourceButtons();
 
-  virtual int GetPlaylist() const;
+  virtual PLAYLIST::Id GetPlaylist() const;
   const std::string& GetPlaylistDirectory();
   void SetPlaylistDirectory(const std::string& strDirectory);
   bool IsCurrentPlaylistDirectory(const std::string& strDirectory);
@@ -81,7 +88,7 @@ protected:
   const CFileItemList& m_items;
 
   int m_currentViewAsControl;
-  int m_playlist;
+  PLAYLIST::Id m_playlist;
 
   std::vector<GUIViewSortDetails> m_sortMethods;
   int m_currentSortMethod;

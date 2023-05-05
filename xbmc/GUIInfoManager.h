@@ -28,6 +28,10 @@ typedef std::shared_ptr<CGUIListItem> CGUIListItemPtr;
 
 namespace KODI
 {
+namespace GAME
+{
+class CGameInfoTag;
+}
 namespace GUILIB
 {
 namespace GUIINFO
@@ -82,7 +86,7 @@ public:
    * boolean condition/expression
    \param expression the boolean condition or expression
    */
-  void UnRegister(INFO::InfoPtr expression);
+  void UnRegister(const INFO::InfoPtr& expression);
 
   /// \brief iterates through boolean conditions and compares their stored values to current values. Returns true if any condition changed value.
   bool ConditionsChangedValues(const std::map<INFO::InfoPtr, bool>& map);
@@ -130,6 +134,9 @@ public:
 
   // Current video stuff
   const CVideoInfoTag* GetCurrentMovieTag() const;
+
+  // Current game stuff
+  const KODI::GAME::CGameInfoTag* GetCurrentGameTag() const;
 
   void UpdateAVInfo();
 

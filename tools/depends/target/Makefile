@@ -11,7 +11,6 @@ DEPENDS = \
   dav1d \
   expat \
   ffmpeg \
-  fmt \
   fontconfig \
   freetype2 \
   freetype2-noharfbuzz \
@@ -46,7 +45,6 @@ DEPENDS = \
   pythonmodule-pil \
   pythonmodule-pycryptodome \
   pythonmodule-setuptools \
-  spdlog \
   sqlite3 \
   tinyxml \
   udfread \
@@ -83,8 +81,6 @@ ifeq ($(OS),android)
   LIBUUID = libuuid
 endif
 
-DEPENDS := $(filter-out $(EXCLUDED_DEPENDS),$(DEPENDS))
-
 ZLIB=
 ifneq ($(HAS_ZLIB),1)
   DEPENDS += zlib
@@ -99,31 +95,66 @@ endif
 
 ALSA_LIB=
 ifeq ($(OS),linux)
-  DEPENDS += dbus libuuid alsa-lib libdrm libxkbcommon libinput libudev libevdev mtdev wayland waylandpp wayland-protocols linux-system-x11-libs
+  DEPENDS += dbus libuuid alsa-lib libdrm libxkbcommon libinput libudev libevdev mtdev pipewire
   ALSA_LIB = alsa-lib
   LIBUUID = libuuid
 
-  ifeq ($(RENDER_SYSTEM),gl)
-    WAYLANDPP_DEPS += linux-system-gl-libs
-    DEPENDS += linux-system-gl-libs
-  else
-    WAYLANDPP_DEPS += mesa
-    DEPENDS += mesa
-  endif
-
-  MESA_DEPS += wayland-protocols wayland linux-system-x11-libs
-
   ifeq ($(CPU),x86_64)
-    LIBVA_DEPS += wayland linux-system-x11-libs
-
     DEPENDS += libva
     LIBVA = libva
   endif
-endif
 
-.PHONY: $(DEPENDS)
+  ifneq (,$(findstring wayland,$(TARGET_PLATFORM)))
+    DEPENDS += wayland waylandpp wayland-protocols
+    MESA_DEPS += wayland-protocols wayland
+    ifeq ($(CPU),x86_64)
+      LIBVA_DEPS += wayland
+    endif
+
+    ifeq ($(RENDER_SYSTEM),gl)
+      WAYLANDPP_DEPS += linux-system-gl-libs
+    else
+      WAYLANDPP_DEPS += mesa
+    endif
+  endif
+
+  ifneq (,$(findstring x11,$(TARGET_PLATFORM)))
+    DEPENDS += linux-system-x11-libs
+    MESA_DEPS += linux-system-x11-libs
+    ifeq ($(CPU),x86_64)
+      LIBVA_DEPS += linux-system-x11-libs
+    endif
+  endif
+
+  ifeq ($(RENDER_SYSTEM),gl)
+    DEPENDS += linux-system-gl-libs
+  else
+    DEPENDS += mesa
+  endif
+
+  ifeq ($(TARGET_PLATFORM),webos)
+    DEPENDS += wayland waylandpp wayland-protocols webos-wayland-extensions webos-userland
+    EXCLUDED_DEPENDS += dbus libcec linux-system-x11-libs pipewire mesa
+  endif
+
+  ifneq (,$(findstring gbm,$(TARGET_PLATFORM)))
+    DEPENDS += hwdata libdisplay-info
+  endif
+endif
+DEPENDS := $(filter-out $(EXCLUDED_DEPENDS),$(DEPENDS))
+
+.PHONY: $(DEPENDS) download $(DOWNLOAD_TARGETS)
 
 all: .installed-$(PLATFORM)
+
+EXCLUDE := linux-system-gl-libs linux-system-x11-libs
+DOWNLOAD_DEPS := $(filter-out $(EXCLUDE:%=%), $(DEPENDS))
+DOWNLOAD_TARGETS := $(addprefix download/, $(DOWNLOAD_DEPS))
+
+$(DOWNLOAD_TARGETS):
+	$(MAKE) -C $(notdir $@) download
+
+download: $(DOWNLOAD_TARGETS)
 
 crossguid: $(LIBUUID)
 curl: openssl nghttp2
@@ -141,6 +172,7 @@ libbluray: fontconfig freetype2 $(ICONV) udfread libxml2
 libcdio-gplv3: $(ICONV)
 libcdio: $(ICONV)
 libcec: p8-platform
+libdisplay-info: meson-cross-file hwdata
 libdrm: meson-cross-file
 libevdev: libudev
 libgcrypt: libgpg-error
@@ -148,7 +180,6 @@ libinput: mtdev libevdev meson-cross-file
 libmicrohttpd: gnutls libgcrypt libgpg-error
 libplist: $(ZLIB)
 libpng: $(ZLIB)
-spdlog: fmt
 libva: libdrm $(LIBVA_DEPS)
 libxml2: $(ZLIB)
 libxslt: libgcrypt libxml2
@@ -157,7 +188,8 @@ mariadb: openssl $(ICONV) $(ZLIB)
 mesa: libdrm meson-cross-file $(MESA_DEPS)
 nettle: gmp
 openssl: $(ZLIB)
-python3: expat gettext libxml2 sqlite3 openssl libffi bzip2 xz
+pipewire: meson-cross-file
+python3: expat gettext libxml2 sqlite3 openssl libffi bzip2 xz $(ICONV)
 pythonmodule-pil: bzip2 $(PYMODULE_DEPS) $(ZLIB) libjpeg-turbo libpng freetype2 python3 pythonmodule-setuptools
 pythonmodule-pycryptodome: $(PYMODULE_DEPS) python3 pythonmodule-setuptools
 pythonmodule-setuptools: $(PYMODULE_DEPS) python3

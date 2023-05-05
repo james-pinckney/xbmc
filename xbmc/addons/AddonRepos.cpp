@@ -8,14 +8,16 @@
 
 #include "AddonRepos.h"
 
-#include "Addon.h"
-#include "AddonManager.h"
-#include "AddonRepoInfo.h"
-#include "AddonSystemSettings.h"
 #include "CompileInfo.h"
-#include "Repository.h"
-#include "RepositoryUpdater.h"
 #include "ServiceBroker.h"
+#include "addons/Addon.h"
+#include "addons/AddonManager.h"
+#include "addons/AddonRepoInfo.h"
+#include "addons/AddonSystemSettings.h"
+#include "addons/Repository.h"
+#include "addons/RepositoryUpdater.h"
+#include "addons/addoninfo/AddonInfo.h"
+#include "addons/addoninfo/AddonType.h"
 #include "messaging/helpers/DialogOKHelper.h"
 #include "utils/StringUtils.h"
 #include "utils/log.h"
@@ -104,6 +106,8 @@ bool CAddonRepos::LoadAddonsFromDatabase(const std::string& addonId,
   {
     // load full repository content
     m_addonDb.GetRepositoryContent(m_allAddons);
+    if (m_allAddons.empty())
+      return true;
   }
   else
   {
@@ -124,7 +128,7 @@ bool CAddonRepos::LoadAddonsFromDatabase(const std::string& addonId,
 
   for (const auto& repo : m_addonsByRepoMap)
   {
-    CLog::Log(LOGDEBUG, "ADDONS: {} - {} addon(s) loaded", repo.first, repo.second.size());
+    CLog::LogFC(LOGDEBUG, LOGADDONS, "{} - {} addon(s) loaded", repo.first, repo.second.size());
 
     const auto& addonsPerRepo = repo.second;
 
@@ -185,9 +189,8 @@ void CAddonRepos::BuildUpdateOrOutdatedList(const std::vector<std::shared_ptr<IA
 {
   std::shared_ptr<IAddon> update;
 
-  CLog::Log(LOGDEBUG, "CAddonRepos::{}: Building {} list from installed add-ons", __func__,
-            addonCheckType == AddonCheckType::OUTDATED_ADDONS ? "outdated" : "update");
-
+  CLog::LogFC(LOGDEBUG, LOGADDONS, "Building {} list from installed add-ons",
+              addonCheckType == AddonCheckType::OUTDATED_ADDONS ? "outdated" : "update");
   for (const auto& addon : installed)
   {
     if (DoAddonUpdateCheck(addon, update))
@@ -199,14 +202,12 @@ void CAddonRepos::BuildUpdateOrOutdatedList(const std::vector<std::shared_ptr<IA
 
 void CAddonRepos::BuildAddonsWithUpdateList(
     const std::vector<std::shared_ptr<IAddon>>& installed,
-    std::map<std::string, CAddonWithUpdate>& addonsWithUpdate) const
+    std::map<std::string, AddonWithUpdate>& addonsWithUpdate) const
 {
   std::shared_ptr<IAddon> update;
 
-  CLog::Log(LOGDEBUG,
-            "CAddonRepos::{}: Building combined addons-with-update map from installed add-ons",
-            __func__);
-
+  CLog::LogFC(LOGDEBUG, LOGADDONS,
+              "Building combined addons-with-update map from installed add-ons");
   for (const auto& addon : installed)
   {
     if (DoAddonUpdateCheck(addon, update))
@@ -219,8 +220,8 @@ void CAddonRepos::BuildAddonsWithUpdateList(
 bool CAddonRepos::DoAddonUpdateCheck(const std::shared_ptr<IAddon>& addon,
                                      std::shared_ptr<IAddon>& update) const
 {
-  CLog::Log(LOGDEBUG, "ADDONS: update check: addonID = {} / Origin = {} / Version = {}",
-            addon->ID(), addon->Origin(), addon->Version().asString());
+  CLog::LogFC(LOGDEBUG, LOGADDONS, "update check: addonID = {} / Origin = {} / Version = {}",
+              addon->ID(), addon->Origin(), addon->Version().asString());
 
   update.reset();
 
@@ -266,8 +267,8 @@ bool CAddonRepos::DoAddonUpdateCheck(const std::shared_ptr<IAddon>& addon,
 
   if (update != nullptr)
   {
-    CLog::Log(LOGDEBUG, "ADDONS: -- found -->: addonID = {} / Origin = {} / Version = {}",
-              update->ID(), update->Origin(), update->Version().asString());
+    CLog::LogFC(LOGDEBUG, LOGADDONS, "-- found -->: addonID = {} / Origin = {} / Version = {}",
+                update->ID(), update->Origin(), update->Version().asString());
     return true;
   }
 
@@ -349,11 +350,8 @@ void CAddonRepos::GetLatestAddonVersions(std::vector<std::shared_ptr<IAddon>>& a
 
   // first we insert all official addon versions into the resulting vector
 
-  std::transform(m_latestOfficialVersions.begin(), m_latestOfficialVersions.end(),
-                 back_inserter(addonList),
-                 [](const std::pair<std::string, std::shared_ptr<IAddon>>& officialVersion) {
-                   return officialVersion.second;
-                 });
+  for (const auto& officialVersion : m_latestOfficialVersions)
+    addonList.emplace_back(officialVersion.second);
 
   // then we insert private addon versions if they don't exist in the official map
   // or installation from ANY_REPOSITORY is allowed and the private version is higher
@@ -380,11 +378,8 @@ void CAddonRepos::GetLatestAddonVersionsFromAllRepos(
 
   // first we insert all official addon versions into the resulting vector
 
-  std::transform(m_latestOfficialVersions.begin(), m_latestOfficialVersions.end(),
-                 back_inserter(addonList),
-                 [](const std::pair<std::string, std::shared_ptr<IAddon>>& officialVersion) {
-                   return officialVersion.second;
-                 });
+  for (const auto& officialVersion : m_latestOfficialVersions)
+    addonList.emplace_back(officialVersion.second);
 
   // then we insert latest version per addon and repository if they don't exist in the official map
   // or installation from ANY_REPOSITORY is allowed and the private version is higher
@@ -449,20 +444,20 @@ bool CAddonRepos::FindDependency(const std::string& dependsId,
   // we got the dependency, so now get a repository-pointer to return
 
   std::shared_ptr<IAddon> tmp;
-  if (!m_addonMgr.GetAddon(dependencyToInstall->Origin(), tmp, ADDON_REPOSITORY,
+  if (!m_addonMgr.GetAddon(dependencyToInstall->Origin(), tmp, AddonType::REPOSITORY,
                            OnlyEnabled::CHOICE_YES))
     return false;
 
   repoForDep = std::static_pointer_cast<CRepository>(tmp);
 
-  CLog::Log(LOGDEBUG, "ADDONS: found dependency [{}] for install/update from repo [{}]",
-            dependencyToInstall->ID(), repoForDep->ID());
+  CLog::LogFC(LOGDEBUG, LOGADDONS, "found dependency [{}] for install/update from repo [{}]",
+              dependencyToInstall->ID(), repoForDep->ID());
 
-  if (dependencyToInstall->HasType(ADDON_REPOSITORY))
+  if (dependencyToInstall->HasType(AddonType::REPOSITORY))
   {
-    CLog::Log(LOGDEBUG,
-              "ADDONS: dependency with id [{}] has type ADDON_REPOSITORY and will not install!",
-              dependencyToInstall->ID());
+    CLog::LogFC(LOGDEBUG, LOGADDONS,
+                "dependency with id [{}] has type ADDON_REPOSITORY and will not install!",
+                dependencyToInstall->ID());
 
     return false;
   }

@@ -52,8 +52,10 @@ namespace
 {
 constexpr int VERTEX_PER_GLYPH = 4; // number of vertex for each glyph
 constexpr int CHARS_PER_TEXTURE_LINE = 20; // number characters to cache per texture line
+constexpr int MAX_TRANSLATED_VERTEX = 32; // max number of structs CTranslatedVertices expect to use
+constexpr int MAX_GLYPHS_PER_TEXT_LINE = 1024; // max number of glyphs per text line expect to use
 constexpr unsigned int SPACING_BETWEEN_CHARACTERS_IN_TEXTURE = 1;
-constexpr int CHAR_CHUNK = 64; // 64 chars allocated at a time (1024 bytes)
+constexpr int CHAR_CHUNK = 64; // 64 chars allocated at a time (2048 bytes)
 constexpr int GLYPH_STRENGTH_BOLD = 24;
 constexpr int GLYPH_STRENGTH_LIGHT = -48;
 constexpr int TAB_SPACE_LENGTH = 4;
@@ -165,7 +167,6 @@ CGUIFontTTF::CGUIFontTTF(const std::string& fontIdent)
     m_dynamicCache(*this),
     m_renderSystem(CServiceBroker::GetRenderSystem())
 {
-  m_vertex.reserve(VERTEX_PER_GLYPH * 1024);
 }
 
 CGUIFontTTF::~CGUIFontTTF(void)
@@ -194,11 +195,9 @@ void CGUIFontTTF::ClearCharacterCache()
   DeleteHardwareTexture();
 
   m_texture = nullptr;
-  delete[] m_char;
-  m_char = new Character[CHAR_CHUNK];
+  m_char.clear();
+  m_char.reserve(CHAR_CHUNK);
   memset(m_charquick, 0, sizeof(m_charquick));
-  m_numChars = 0;
-  m_maxChars = CHAR_CHUNK;
   // set the posX and posY so that our texture will be created on first character write.
   m_posX = m_textureWidth;
   m_posY = -static_cast<int>(GetTextureLineHeight());
@@ -209,11 +208,7 @@ void CGUIFontTTF::Clear()
 {
   m_texture.reset();
   m_texture = nullptr;
-  delete[] m_char;
   memset(m_charquick, 0, sizeof(m_charquick));
-  m_char = nullptr;
-  m_maxChars = 0;
-  m_numChars = 0;
   m_posX = 0;
   m_posY = 0;
   m_nestedBeginCount = 0;
@@ -298,11 +293,6 @@ bool CGUIFontTTF::Load(
 
   m_texture.reset();
   m_texture = nullptr;
-  delete[] m_char;
-  m_char = nullptr;
-
-  m_maxChars = 0;
-  m_numChars = 0;
 
   m_textureHeight = 0;
   m_textureWidth = ((m_cellHeight * CHARS_PER_TEXTURE_LINE) & ~63) + 64;
@@ -316,11 +306,6 @@ bool CGUIFontTTF::Load(
   // set the posX and posY so that our texture will be created on first character write.
   m_posX = m_textureWidth;
   m_posY = -static_cast<int>(GetTextureLineHeight());
-
-  // cache the ellipses width
-  Character* ellipse = GetCharacter(L'.', 0);
-  if (ellipse)
-    m_ellipsesWidth = ellipse->m_advance;
 
   return true;
 }
@@ -364,7 +349,7 @@ void CGUIFontTTF::DrawTextInternal(CGraphicContext& context,
   Begin();
   uint32_t rawAlignment = alignment;
   bool dirtyCache(false);
-  bool hardwareClipping = m_renderSystem->ScissorsCanEffectClipping();
+  const bool hardwareClipping = m_renderSystem->ScissorsCanEffectClipping();
   CGUIFontCacheStaticPosition staticPos(x, y);
   CGUIFontCacheDynamicPosition dynamicPos;
   if (hardwareClipping)
@@ -385,12 +370,34 @@ void CGUIFontTTF::DrawTextInternal(CGraphicContext& context,
                        : static_cast<std::shared_ptr<std::vector<SVertex>>&>(m_staticCache.Lookup(
                              context, staticPos, colors, text, alignment, maxPixelWidth, scrolling,
                              std::chrono::steady_clock::now(), dirtyCache));
+
+  // reserves vertex vector capacity, only the ones that are going to be used
+  if (hardwareClipping)
+  {
+    if (m_vertexTrans.capacity() == 0)
+      m_vertexTrans.reserve(MAX_TRANSLATED_VERTEX);
+  }
+  else
+  {
+    if (m_vertex.capacity() == 0)
+      m_vertex.reserve(VERTEX_PER_GLYPH * MAX_GLYPHS_PER_TEXT_LINE);
+  }
+
   if (dirtyCache)
   {
     const std::vector<Glyph> glyphs = GetHarfBuzzShapedGlyphs(text);
     // save the origin, which is scaled separately
     m_originX = x;
     m_originY = y;
+
+    // cache the ellipses width
+    if (!m_ellipseCached)
+    {
+      m_ellipseCached = true;
+      Character* ellipse = GetCharacter(L'.', 0);
+      if (ellipse)
+        m_ellipsesWidth = ellipse->m_advance;
+    }
 
     // Check if we will really need to truncate or justify the text
     if (alignment & XBFONT_TRUNCATED)
@@ -485,11 +492,6 @@ void CGUIFontTTF::DrawTextInternal(CGraphicContext& context,
 
       // grab the next character
       Character* ch = &characters.front();
-      if (ch->m_glyphAndStyle == 0)
-      {
-        characters.pop();
-        continue;
-      }
 
       if ((text[glyph.m_glyphInfo.cluster] & 0xffff) == static_cast<character_t>('\t'))
       {
@@ -635,6 +637,11 @@ unsigned int CGUIFontTTF::GetTextureLineHeight() const
   return m_cellHeight + SPACING_BETWEEN_CHARACTERS_IN_TEXTURE;
 }
 
+unsigned int CGUIFontTTF::GetMaxFontHeight() const
+{
+  return m_maxFontHeight + SPACING_BETWEEN_CHARACTERS_IN_TEXTURE;
+}
+
 std::vector<CGUIFontTTF::Glyph> CGUIFontTTF::GetHarfBuzzShapedGlyphs(const vecText& text)
 {
   std::vector<Glyph> glyphs;
@@ -650,6 +657,7 @@ std::vector<CGUIFontTTF::Glyph> CGUIFontTTF::GetHarfBuzzShapedGlyphs(const vecTe
   int lastScriptIndex = -1;
   int lastSetIndex = -1;
 
+  scripts.reserve(text.size());
   for (const auto& character : text)
   {
     scripts.emplace_back(hb_unicode_script(ufuncs, static_cast<wchar_t>(0xffff & character)));
@@ -754,8 +762,10 @@ CGUIFontTTF::Character* CGUIFontTTF::GetCharacter(character_t chr, FT_UInt glyph
   // letters are stored based on style and glyph
   character_t ch = (style << 16) | glyphIndex;
 
+  // perform binary search on sorted array by m_glyphAndStyle and
+  // if not found obtains position to insert the new m_char to keep sorted
   int low = 0;
-  int high = m_numChars - 1;
+  int high = m_char.size() - 1;
   while (low <= high)
   {
     int mid = (low + high) >> 1;
@@ -768,36 +778,32 @@ CGUIFontTTF::Character* CGUIFontTTF::GetCharacter(character_t chr, FT_UInt glyph
   }
   // if we get to here, then low is where we should insert the new character
 
+  int startIndex = low;
+
   // increase the size of the buffer if we need it
-  if (m_numChars >= m_maxChars)
-  { // need to increase the size of the buffer
-    Character* newTable = new Character[m_maxChars + CHAR_CHUNK];
-    if (m_char)
-    {
-      memcpy(newTable, m_char, low * sizeof(Character));
-      memcpy(newTable + low + 1, m_char + low, (m_numChars - low) * sizeof(Character));
-      delete[] m_char;
-    }
-    m_char = newTable;
-    m_maxChars += CHAR_CHUNK;
+  if (m_char.size() == m_char.capacity())
+  {
+    m_char.reserve(m_char.capacity() + CHAR_CHUNK);
+    startIndex = 0;
   }
-  else
-  { // just move the data along as necessary
-    memmove(m_char + low + 1, m_char + low, (m_numChars - low) * sizeof(Character));
-  }
+
   // render the character to our texture
   // must End() as we can't render text to our texture during a Begin(), End() block
   unsigned int nestedBeginCount = m_nestedBeginCount;
   m_nestedBeginCount = 1;
   if (nestedBeginCount)
     End();
-  if (!CacheCharacter(glyphIndex, style, m_char + low))
+
+  m_char.emplace(m_char.begin() + low);
+  if (!CacheCharacter(glyphIndex, style, m_char.data() + low))
   { // unable to cache character - try clearing them all out and starting over
     CLog::LogF(LOGDEBUG, "Unable to cache character. Clearing character cache of {} characters",
-               m_numChars);
+               m_char.size());
     ClearCharacterCache();
     low = 0;
-    if (!CacheCharacter(glyphIndex, style, m_char))
+    startIndex = 0;
+    m_char.emplace(m_char.begin());
+    if (!CacheCharacter(glyphIndex, style, m_char.data()))
     {
       CLog::LogF(LOGERROR, "Unable to cache character (out of memory?)");
       if (nestedBeginCount)
@@ -811,9 +817,8 @@ CGUIFontTTF::Character* CGUIFontTTF::GetCharacter(character_t chr, FT_UInt glyph
     Begin();
   m_nestedBeginCount = nestedBeginCount;
 
-  // fixup quick access
-  *m_charquick = {};
-  for (int i = 0; i < m_numChars; i++)
+  // update the lookup table with only the m_char addresses that have changed
+  for (size_t i = startIndex; i < m_char.size(); ++i)
   {
     if (m_char[i].m_glyphIndex < MAX_GLYPH_IDX)
     {
@@ -821,11 +826,11 @@ CGUIFontTTF::Character* CGUIFontTTF::GetCharacter(character_t chr, FT_UInt glyph
       character_t ch = ((m_char[i].m_glyphAndStyle & 0xffff0000) >> 4) | m_char[i].m_glyphIndex;
 
       if (ch < LOOKUPTABLE_SIZE)
-        m_charquick[ch] = m_char + i;
+        m_charquick[ch] = m_char.data() + i;
     }
   }
 
-  return m_char + low;
+  return m_char.data() + low;
 }
 
 bool CGUIFontTTF::CacheCharacter(FT_UInt glyphIndex, uint32_t style, Character* ch)
@@ -872,9 +877,10 @@ bool CGUIFontTTF::CacheCharacter(FT_UInt glyphIndex, uint32_t style, Character* 
 
     // check we have enough room for the character.
     // cast-fest is here to avoid warnings due to freeetype version differences (signedness of width).
-    if (static_cast<int>(m_posX + bitGlyph->left + bitmap.width) > static_cast<int>(m_textureWidth))
+    if (static_cast<int>(m_posX + bitGlyph->left + bitmap.width +
+                         SPACING_BETWEEN_CHARACTERS_IN_TEXTURE) > static_cast<int>(m_textureWidth))
     { // no space - gotta drop to the next line (which means creating a new texture and copying it across)
-      m_posX = 0;
+      m_posX = 1;
       m_posY += GetTextureLineHeight();
       if (bitGlyph->left < 0)
         m_posX += -bitGlyph->left;
@@ -901,6 +907,7 @@ bool CGUIFontTTF::CacheCharacter(FT_UInt glyphIndex, uint32_t style, Character* 
         }
         m_texture = std::move(newTexture);
       }
+      m_posY = GetMaxFontHeight();
     }
 
     if (!m_texture)
@@ -916,8 +923,8 @@ bool CGUIFontTTF::CacheCharacter(FT_UInt glyphIndex, uint32_t style, Character* 
   ch->m_glyphIndex = glyphIndex;
   ch->m_offsetX = static_cast<short>(bitGlyph->left);
   ch->m_offsetY = static_cast<short>(m_cellBaseLine - bitGlyph->top);
-  ch->m_left = isEmptyGlyph ? 0.0f : (static_cast<float>(m_posX) + ch->m_offsetX);
-  ch->m_top = isEmptyGlyph ? 0.0f : (static_cast<float>(m_posY) + ch->m_offsetY);
+  ch->m_left = isEmptyGlyph ? 0.0f : (static_cast<float>(m_posX));
+  ch->m_top = isEmptyGlyph ? 0.0f : (static_cast<float>(m_posY));
   ch->m_right = ch->m_left + bitmap.width;
   ch->m_bottom = ch->m_top + bitmap.rows;
   ch->m_advance =
@@ -927,17 +934,16 @@ bool CGUIFontTTF::CacheCharacter(FT_UInt glyphIndex, uint32_t style, Character* 
   if (!isEmptyGlyph)
   {
     // ensure our rect will stay inside the texture (it *should* but we need to be certain)
-    unsigned int x1 = std::max(m_posX + ch->m_offsetX, 0);
-    unsigned int y1 = std::max(m_posY + ch->m_offsetY, 0);
+    unsigned int x1 = std::max(m_posX, 0);
+    unsigned int y1 = std::max(m_posY, 0);
     unsigned int x2 = std::min(x1 + bitmap.width, m_textureWidth);
     unsigned int y2 = std::min(y1 + bitmap.rows, m_textureHeight);
+    m_maxFontHeight = std::max(m_maxFontHeight, y2);
     CopyCharToTexture(bitGlyph, x1, y1, x2, y2);
 
     m_posX += SPACING_BETWEEN_CHARACTERS_IN_TEXTURE +
-              static_cast<unsigned short>(
-                  std::max(ch->m_right - ch->m_left + ch->m_offsetX, ch->m_advance));
+              static_cast<unsigned short>(ch->m_right - ch->m_left);
   }
-  m_numChars++;
 
   // free the glyph
   FT_Done_Glyph(glyph);

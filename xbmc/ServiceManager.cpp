@@ -11,10 +11,11 @@
 #include "ContextMenuManager.h"
 #include "DatabaseManager.h"
 #include "PlayListPlayer.h"
-#include "addons/AudioDecoder.h"
+#include "addons/AddonManager.h"
 #include "addons/BinaryAddonCache.h"
 #include "addons/ExtsMimeSupportList.h"
 #include "addons/RepositoryUpdater.h"
+#include "addons/Service.h"
 #include "addons/VFSEntry.h"
 #include "addons/binary-addons/BinaryAddonManager.h"
 #include "cores/DataCacheCore.h"
@@ -148,7 +149,7 @@ bool CServiceManager::InitStageTwo(const std::string& profilesUserDataFolder)
 
   m_contextMenuManager.reset(new CContextMenuManager(*m_addonMgr));
 
-  m_gameControllerManager.reset(new GAME::CControllerManager);
+  m_gameControllerManager = std::make_unique<GAME::CControllerManager>(*m_addonMgr);
   m_inputManager.reset(new CInputManager());
   m_inputManager->InitializeInputs();
 
@@ -167,6 +168,10 @@ bool CServiceManager::InitStageTwo(const std::string& profilesUserDataFolder)
   m_mediaManager.reset(new CMediaManager());
   m_mediaManager->Initialize();
 
+#if !defined(TARGET_WINDOWS) && defined(HAS_DVD_DRIVE)
+  m_DetectDVDType = std::make_unique<MEDIA_DETECT::CDetectDVDMedia>();
+#endif
+
 #if defined(HAS_FILESYSTEM_SMB)
   m_WSDiscovery = WSDiscovery::IWSDiscovery::GetInstance();
 #endif
@@ -184,15 +189,15 @@ bool CServiceManager::InitStageThree(const std::shared_ptr<CProfileManager>& pro
 #if !defined(TARGET_WINDOWS) && defined(HAS_DVD_DRIVE)
   // Start Thread for DVD Mediatype detection
   CLog::Log(LOGINFO, "[Media Detection] starting service for optical media detection");
-  m_DetectDVDType = std::make_unique<MEDIA_DETECT::CDetectDVDMedia>();
   m_DetectDVDType->Create(false);
 #endif
 
   // Peripherals depends on strings being loaded before stage 3
   m_peripherals->Initialise();
 
-  m_gameServices.reset(new GAME::CGameServices(*m_gameControllerManager, *m_gameRenderManager,
-                                               *m_peripherals, *profileManager));
+  m_gameServices =
+      std::make_unique<GAME::CGameServices>(*m_gameControllerManager, *m_gameRenderManager,
+                                            *m_peripherals, *profileManager, *m_inputManager);
 
   m_contextMenuManager->Init();
 

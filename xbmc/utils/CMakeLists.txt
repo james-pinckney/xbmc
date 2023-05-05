@@ -21,6 +21,7 @@ set(SOURCES ActorProtocol.cpp
             DiscsUtils.cpp
             EndianSwap.cpp
             EmbeddedArt.cpp
+            ExecString.cpp
             FileExtensionProvider.cpp
             Fanart.cpp
             FileOperationJob.cpp
@@ -45,6 +46,7 @@ set(SOURCES ActorProtocol.cpp
             MovingSpeed.cpp
             Observer.cpp
             POUtils.cpp
+            PlayerUtils.cpp
             RecentlyAddedJob.cpp
             RegExp.cpp
             rfft.cpp
@@ -90,6 +92,7 @@ set(HEADERS ActorProtocol.h
             CharsetDetection.h
             CPUInfo.h
             ColorUtils.h
+            ComponentContainer.h
             ContentUtils.h
             Crc32.h
             CSSUtils.h
@@ -99,6 +102,7 @@ set(HEADERS ActorProtocol.h
             EndianSwap.h
             EventStream.h
             EventStreamDetail.h
+            ExecString.h
             FileExtensionProvider.h
             Fanart.h
             FileOperationJob.h
@@ -133,6 +137,7 @@ set(HEADERS ActorProtocol.h
             Locale.h
             log.h
             logtypes.h
+            Map.h
             MathUtils.h
             MemUtils.h
             Mime.h
@@ -140,6 +145,7 @@ set(HEADERS ActorProtocol.h
             Observer.h
             params_check_macros.h
             POUtils.h
+            PlayerUtils.h
             ProgressJob.h
             RecentlyAddedJob.h
             RegExp.h
@@ -162,6 +168,7 @@ set(HEADERS ActorProtocol.h
             SystemInfo.h
             Temperature.h
             TextSearch.h
+            TimeFormat.h
             TimeUtils.h
             TransformMatrix.h
             URIUtils.h
@@ -229,6 +236,11 @@ if("gbm" IN_LIST CORE_PLATFORM_NAME_LC OR "wayland" IN_LIST CORE_PLATFORM_NAME_L
   if(LIBDRM_FOUND)
     list(APPEND SOURCES DRMHelpers.cpp)
     list(APPEND HEADERS DRMHelpers.h)
+  endif()
+
+  if(LIBDISPLAYINFO_FOUND)
+    list(APPEND SOURCES DisplayInfo.cpp)
+    list(APPEND HEADERS DisplayInfo.h)
   endif()
 endif()
 

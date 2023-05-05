@@ -334,6 +334,8 @@ void CGUIShaderDX::ApplyChanges(void)
       buffer->wvp = worldViewProj;
       buffer->blackLevel = (DX::Windowing()->UseLimitedColor() ? 16.f / 255.f : 0.f);
       buffer->colorRange = (DX::Windowing()->UseLimitedColor() ? (235.f - 16.f) / 255.f : 1.0f);
+      if (DX::Windowing()->IsTransferPQ())
+        buffer->sdrPeakLum = 10000.0f / DX::Windowing()->GetGuiSdrPeakLuminance();
       buffer->PQ = (DX::Windowing()->IsTransferPQ() ? 1 : 0);
 
       pContext->Unmap(m_pWVPBuffer.Get(), 0);

@@ -45,8 +45,6 @@ using namespace std::chrono_literals;
 
 CWinSystemAndroid::CWinSystemAndroid()
 {
-  m_nativeDisplay = EGL_NO_DISPLAY;
-
   m_displayWidth = 0;
   m_displayHeight = 0;
 
@@ -278,6 +276,11 @@ void CWinSystemAndroid::UpdateDisplayModes()
     // update display settings
     UpdateResolutions(false);
   }
+}
+
+bool CWinSystemAndroid::Minimize()
+{
+  return CXBMCApp::Get().moveTaskToBack(true);
 }
 
 bool CWinSystemAndroid::Hide()

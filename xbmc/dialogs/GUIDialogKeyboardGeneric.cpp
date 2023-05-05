@@ -129,10 +129,8 @@ CGUIDialogKeyboardGeneric::CGUIDialogKeyboardGeneric()
   m_loadType = KEEP_IN_MEMORY;
   m_isKeyboardNavigationMode = false;
   m_previouslyFocusedButton = 0;
-  m_codingtable = NULL;
   m_pos = 0;
   m_listwidth = 600;
-  m_hzcode = "";
 }
 
 void CGUIDialogKeyboardGeneric::OnWindowLoaded()
@@ -639,7 +637,7 @@ void CGUIDialogKeyboardGeneric::OnIPAddress()
   else
     start = text.size();
   if (CGUIDialogNumeric::ShowAndGetIPAddress(ip, g_localizeStrings.Get(14068)))
-    SetEditText(text.substr(0, start) + ip.c_str() + text.substr(start + length));
+    SetEditText(text.substr(0, start) + ip + text.substr(start + length));
 }
 
 void CGUIDialogKeyboardGeneric::OnVoiceRecognition()

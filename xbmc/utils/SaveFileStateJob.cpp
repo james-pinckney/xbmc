@@ -8,7 +8,6 @@
 
 #include "SaveFileStateJob.h"
 
-#include "Application.h"
 #include "FileItem.h"
 #include "GUIUserMessages.h"
 #include "ServiceBroker.h"
@@ -16,6 +15,8 @@
 #include "URIUtils.h"
 #include "URL.h"
 #include "Util.h"
+#include "application/ApplicationComponents.h"
+#include "application/ApplicationStackHelper.h"
 #include "guilib/GUIComponent.h"
 #include "guilib/GUIMessage.h"
 #include "guilib/GUIWindowManager.h"
@@ -97,14 +98,18 @@ void CSaveFileState::DoWork(CFileItem& item,
                         redactPath);
 
               // consider this item as played
-              videodatabase.IncrementPlayCount(item);
-              item.GetVideoInfoTag()->IncrementPlayCount();
+              const CDateTime newLastPlayed = videodatabase.IncrementPlayCount(item);
 
               item.SetOverlayImage(CGUIListItem::ICON_OVERLAY_UNWATCHED, true);
               updateListing = true;
 
               if (item.HasVideoInfoTag())
               {
+                item.GetVideoInfoTag()->IncrementPlayCount();
+
+                if (newLastPlayed.IsValid())
+                  item.GetVideoInfoTag()->m_lastPlayed = newLastPlayed;
+
                 CVariant data;
                 data["id"] = item.GetVideoInfoTag()->m_iDbId;
                 data["type"] = item.GetVideoInfoTag()->m_type;
@@ -114,7 +119,12 @@ void CSaveFileState::DoWork(CFileItem& item,
             }
           }
           else
-            videodatabase.UpdateLastPlayed(item);
+          {
+            const CDateTime newLastPlayed = videodatabase.UpdateLastPlayed(item);
+
+            if (item.HasVideoInfoTag() && newLastPlayed.IsValid())
+              item.GetVideoInfoTag()->m_lastPlayed = newLastPlayed;
+          }
 
           if (!item.HasVideoInfoTag() ||
               item.GetVideoInfoTag()->GetResumePoint().timeInSeconds != bookmark.timeInSeconds)
@@ -165,9 +175,10 @@ void CSaveFileState::DoWork(CFileItem& item,
 
           // Could be part of an ISO stack. In this case the bookmark is saved onto the part.
           // In order to properly update the list, we need to refresh the stack's resume point
-          const CApplicationStackHelper& stackHelper = g_application.GetAppStackHelper();
-          if (stackHelper.HasRegisteredStack(item) &&
-              stackHelper.GetRegisteredStackTotalTimeMs(item) == 0)
+          const auto& components = CServiceBroker::GetAppComponents();
+          const auto stackHelper = components.GetComponent<CApplicationStackHelper>();
+          if (stackHelper->HasRegisteredStack(item) &&
+              stackHelper->GetRegisteredStackTotalTimeMs(item) == 0)
             videodatabase.GetResumePoint(*(msgItem->GetVideoInfoTag()));
 
           CGUIMessage message(GUI_MSG_NOTIFY_ALL, CServiceBroker::GetGUI()->GetWindowManager().GetActiveWindow(), 0, GUI_MSG_UPDATE_ITEM, 0, msgItem);
@@ -215,7 +226,8 @@ void CSaveFileState::DoWork(CFileItem& item,
       if (item.IsAudioBook())
       {
         musicdatabase.Open();
-        musicdatabase.SetResumeBookmarkForAudioBook(item, item.m_lStartOffset + CUtil::ConvertSecsToMilliSecs(bookmark.timeInSeconds));
+        musicdatabase.SetResumeBookmarkForAudioBook(
+            item, item.GetStartOffset() + CUtil::ConvertSecsToMilliSecs(bookmark.timeInSeconds));
         musicdatabase.Close();
       }
     }

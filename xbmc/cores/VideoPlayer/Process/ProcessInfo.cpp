@@ -269,7 +269,7 @@ void CProcessInfo::UpdateDeinterlacingMethods(std::list<EINTERLACEMETHOD> &metho
     m_deintMethods.push_front(EINTERLACEMETHOD::VS_INTERLACEMETHOD_NONE);
 }
 
-bool CProcessInfo::Supports(EINTERLACEMETHOD method)
+bool CProcessInfo::Supports(EINTERLACEMETHOD method) const
 {
   std::unique_lock<CCriticalSection> lock(m_videoCodecSection);
 
@@ -287,7 +287,7 @@ void CProcessInfo::SetDeinterlacingMethodDefault(EINTERLACEMETHOD method)
   m_deintMethodDefault = method;
 }
 
-EINTERLACEMETHOD CProcessInfo::GetDeinterlacingMethodDefault()
+EINTERLACEMETHOD CProcessInfo::GetDeinterlacingMethodDefault() const
 {
   std::unique_lock<CCriticalSection> lock(m_videoCodecSection);
 
@@ -595,6 +595,13 @@ bool CProcessInfo::IsTempoAllowed(float tempo)
     return true;
 
   return false;
+}
+
+unsigned int CProcessInfo::GetMaxPassthroughOffSyncDuration() const
+{
+  return CServiceBroker::GetSettingsComponent()
+      ->GetAdvancedSettings()
+      ->m_maxPassthroughOffSyncDuration;
 }
 
 void CProcessInfo::SetLevelVQ(int level)

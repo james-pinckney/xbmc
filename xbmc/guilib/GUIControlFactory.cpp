@@ -45,7 +45,6 @@
 #include "GUIVisualisationControl.h"
 #include "GUIWrappingListContainer.h"
 #include "LocalizeStrings.h"
-#include "Util.h"
 #include "addons/Skin.h"
 #include "cores/RetroPlayer/guicontrols/GUIGameControl.h"
 #include "games/controllers/guicontrols/GUIGameController.h"
@@ -69,16 +68,31 @@ typedef struct
 
 static const ControlMapping controls[] = {
     {"button", CGUIControl::GUICONTROL_BUTTON},
+    {"colorbutton", CGUIControl::GUICONTROL_COLORBUTTON},
+    {"edit", CGUIControl::GUICONTROL_EDIT},
+    {"epggrid", CGUIControl::GUICONTAINER_EPGGRID},
     {"fadelabel", CGUIControl::GUICONTROL_FADELABEL},
+    {"fixedlist", CGUIControl::GUICONTAINER_FIXEDLIST},
+    {"gamecontroller", CGUIControl::GUICONTROL_GAMECONTROLLER},
+    {"gamewindow", CGUIControl::GUICONTROL_GAME},
+    {"group", CGUIControl::GUICONTROL_GROUP},
+    {"group", CGUIControl::GUICONTROL_LISTGROUP},
+    {"grouplist", CGUIControl::GUICONTROL_GROUPLIST},
     {"image", CGUIControl::GUICONTROL_IMAGE},
     {"image", CGUIControl::GUICONTROL_BORDEREDIMAGE},
     {"label", CGUIControl::GUICONTROL_LABEL},
     {"label", CGUIControl::GUICONTROL_LISTLABEL},
-    {"group", CGUIControl::GUICONTROL_GROUP},
-    {"group", CGUIControl::GUICONTROL_LISTGROUP},
+    {"list", CGUIControl::GUICONTAINER_LIST},
+    {"mover", CGUIControl::GUICONTROL_MOVER},
+    {"multiimage", CGUIControl::GUICONTROL_MULTI_IMAGE},
+    {"panel", CGUIControl::GUICONTAINER_PANEL},
     {"progress", CGUIControl::GUICONTROL_PROGRESS},
     {"radiobutton", CGUIControl::GUICONTROL_RADIO},
+    {"ranges", CGUIControl::GUICONTROL_RANGES},
+    {"renderaddon", CGUIControl::GUICONTROL_RENDERADDON},
+    {"resize", CGUIControl::GUICONTROL_RESIZE},
     {"rss", CGUIControl::GUICONTROL_RSS},
+    {"scrollbar", CGUIControl::GUICONTROL_SCROLLBAR},
     {"slider", CGUIControl::GUICONTROL_SLIDER},
     {"sliderex", CGUIControl::GUICONTROL_SETTINGS_SLIDER},
     {"spincontrol", CGUIControl::GUICONTROL_SPIN},
@@ -86,23 +100,9 @@ static const ControlMapping controls[] = {
     {"textbox", CGUIControl::GUICONTROL_TEXTBOX},
     {"togglebutton", CGUIControl::GUICONTROL_TOGGLEBUTTON},
     {"videowindow", CGUIControl::GUICONTROL_VIDEO},
-    {"gamewindow", CGUIControl::GUICONTROL_GAME},
-    {"mover", CGUIControl::GUICONTROL_MOVER},
-    {"resize", CGUIControl::GUICONTROL_RESIZE},
-    {"edit", CGUIControl::GUICONTROL_EDIT},
     {"visualisation", CGUIControl::GUICONTROL_VISUALISATION},
-    {"renderaddon", CGUIControl::GUICONTROL_RENDERADDON},
-    {"multiimage", CGUIControl::GUICONTROL_MULTI_IMAGE},
-    {"grouplist", CGUIControl::GUICONTROL_GROUPLIST},
-    {"scrollbar", CGUIControl::GUICONTROL_SCROLLBAR},
-    {"gamecontroller", CGUIControl::GUICONTROL_GAMECONTROLLER},
-    {"list", CGUIControl::GUICONTAINER_LIST},
     {"wraplist", CGUIControl::GUICONTAINER_WRAPLIST},
-    {"fixedlist", CGUIControl::GUICONTAINER_FIXEDLIST},
-    {"epggrid", CGUIControl::GUICONTAINER_EPGGRID},
-    {"panel", CGUIControl::GUICONTAINER_PANEL},
-    {"ranges", CGUIControl::GUICONTROL_RANGES},
-    {"colorbutton", CGUIControl::GUICONTROL_COLORBUTTON}};
+};
 
 CGUIControl::GUICONTROLTYPES CGUIControlFactory::TranslateControlType(const std::string &type)
 {
@@ -491,22 +491,22 @@ bool CGUIControlFactory::GetAnimations(TiXmlNode *control, const CRect &rect, in
   return ret;
 }
 
-bool CGUIControlFactory::GetActions(const TiXmlNode* pRootNode, const char* strTag, CGUIAction& action)
+bool CGUIControlFactory::GetActions(const TiXmlNode* pRootNode,
+                                    const char* strTag,
+                                    CGUIAction& actions)
 {
-  action.m_actions.clear();
+  actions.Reset();
   const TiXmlElement* pElement = pRootNode->FirstChildElement(strTag);
   while (pElement)
   {
     if (pElement->FirstChild())
     {
-      CGUIAction::cond_action_pair pair;
-      pair.condition = XMLUtils::GetAttribute(pElement, "condition");
-      pair.action = pElement->FirstChild()->Value();
-      action.m_actions.push_back(pair);
+      actions.Append(
+          {XMLUtils::GetAttribute(pElement, "condition"), pElement->FirstChild()->Value()});
     }
     pElement = pElement->NextSiblingElement(strTag);
   }
-  return action.m_actions.size() > 0;
+  return actions.HasAnyActions();
 }
 
 bool CGUIControlFactory::GetHitRect(const TiXmlNode *control, CRect &rect, const CRect &parentRect)
@@ -749,7 +749,8 @@ CGUIControl* CGUIControlFactory::Create(int parentID, const CRect &rect, TiXmlEl
   bool bReverse = true;
   bool bReveal = false;
   CTextureInfo textureBackground, textureLeft, textureRight, textureMid, textureOverlay;
-  CTextureInfo textureNib, textureNibFocus, textureBar, textureBarFocus;
+  CTextureInfo textureNib, textureNibFocus, textureNibDisabled, textureBar, textureBarFocus,
+      textureBarDisabled;
   CTextureInfo textureUp, textureDown;
   CTextureInfo textureUpFocus, textureDownFocus;
   CTextureInfo textureUpDisabled, textureDownDisabled;
@@ -923,7 +924,8 @@ CGUIControl* CGUIControlFactory::Create(int parentID, const CRect &rect, TiXmlEl
   GetActions(pControlNode, "ontextchange", textChangeActions);
   GetActions(pControlNode, "onfocus", focusActions);
   GetActions(pControlNode, "onunfocus", unfocusActions);
-  focusActions.m_sendThreadMessages = unfocusActions.m_sendThreadMessages = true;
+  focusActions.EnableSendThreadMessageMode();
+  unfocusActions.EnableSendThreadMessageMode();
   GetActions(pControlNode, "altclick", altclickActions);
 
   std::string infoString;
@@ -973,8 +975,12 @@ CGUIControl* CGUIControlFactory::Create(int parentID, const CRect &rect, TiXmlEl
   GetTexture(pControlNode, "texturesliderbackground", textureBackground);
   GetTexture(pControlNode, "texturesliderbar", textureBar);
   GetTexture(pControlNode, "texturesliderbarfocus", textureBarFocus);
+  if (!GetTexture(pControlNode, "texturesliderbardisabled", textureBarDisabled))
+    GetTexture(pControlNode, "texturesliderbar", textureBarDisabled); // backward compatibility
   GetTexture(pControlNode, "textureslidernib", textureNib);
   GetTexture(pControlNode, "textureslidernibfocus", textureNibFocus);
+  if (!GetTexture(pControlNode, "textureslidernibdisabled", textureNibDisabled))
+    GetTexture(pControlNode, "textureslidernib", textureNibDisabled); // backward compatibility
 
   GetTexture(pControlNode, "texturecolormask", textureColorMask);
   GetTexture(pControlNode, "texturecolordisabledmask", textureColorDisabledMask);
@@ -1235,6 +1241,10 @@ CGUIControl* CGUIControlFactory::Create(int parentID, const CRect &rect, TiXmlEl
       GUIINFO::CGUIInfoLabel rotation;
       GetInfoLabel(pControlNode, "rotation", rotation, parentID);
       static_cast<RETRO::CGUIGameControl*>(control)->SetRotation(rotation);
+
+      GUIINFO::CGUIInfoLabel pixels;
+      GetInfoLabel(pControlNode, "pixels", pixels, parentID);
+      static_cast<RETRO::CGUIGameControl*>(control)->SetPixels(pixels);
     }
     break;
   case CGUIControl::GUICONTROL_FADELABEL:
@@ -1345,8 +1355,8 @@ CGUIControl* CGUIControlFactory::Create(int parentID, const CRect &rect, TiXmlEl
   case CGUIControl::GUICONTROL_SLIDER:
     {
       control = new CGUISliderControl(
-        parentID, id, posX, posY, width, height,
-        textureBar, textureNib, textureNibFocus, SLIDER_CONTROL_TYPE_PERCENTAGE, orientation);
+          parentID, id, posX, posY, width, height, textureBar, textureBarDisabled, textureNib,
+          textureNibFocus, textureNibDisabled, SLIDER_CONTROL_TYPE_PERCENTAGE, orientation);
 
       static_cast<CGUISliderControl*>(control)->SetInfo(singleInfo);
       static_cast<CGUISliderControl*>(control)->SetAction(action);
@@ -1355,8 +1365,9 @@ CGUIControl* CGUIControlFactory::Create(int parentID, const CRect &rect, TiXmlEl
   case CGUIControl::GUICONTROL_SETTINGS_SLIDER:
     {
       control = new CGUISettingsSliderControl(
-        parentID, id, posX, posY, width, height, sliderWidth, sliderHeight, textureFocus, textureNoFocus,
-        textureBar, textureNib, textureNibFocus, labelInfo, SLIDER_CONTROL_TYPE_PERCENTAGE);
+          parentID, id, posX, posY, width, height, sliderWidth, sliderHeight, textureFocus,
+          textureNoFocus, textureBar, textureBarDisabled, textureNib, textureNibFocus,
+          textureNibDisabled, labelInfo, SLIDER_CONTROL_TYPE_PERCENTAGE);
 
       static_cast<CGUISettingsSliderControl*>(control)->SetText(strLabel);
       static_cast<CGUISettingsSliderControl*>(control)->SetInfo(singleInfo);

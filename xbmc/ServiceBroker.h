@@ -51,10 +51,13 @@ class CApplicationMessenger;
 } // namespace KODI
 
 class CAppParams;
+template<class T>
+class CComponentContainer;
 class CContextMenuManager;
 class XBPython;
 class CDataCacheCore;
 class IAE;
+class IApplicationComponent;
 class CFavouritesService;
 class CInputManager;
 class CFileExtensionProvider;
@@ -124,6 +127,7 @@ public:
 
   static CLog& GetLogging();
   static void CreateLogging();
+  static bool IsLoggingUp();
   static void DestroyLogging();
 
   static std::shared_ptr<ANNOUNCEMENT::CAnnouncementManager> GetAnnouncementManager();
@@ -153,7 +157,7 @@ public:
   static ADDON::CRepositoryUpdater& GetRepositoryUpdater();
   static CInputManager& GetInputManager();
   static CFileExtensionProvider& GetFileExtensionProvider();
-  static bool IsBinaryAddonCacheUp();
+  static bool IsAddonInterfaceUp();
   static bool IsServiceManagerUp();
   static CNetworkBase& GetNetwork();
   static CPowerManager& GetPowerManager();
@@ -162,6 +166,7 @@ public:
   static CDatabaseManager& GetDatabaseManager();
   static CEventLog* GetEventLog();
   static CMediaManager& GetMediaManager();
+  static CComponentContainer<IApplicationComponent>& GetAppComponents();
 
   static CGUIComponent* GetGUI();
   static void RegisterGUI(CGUIComponent* gui);

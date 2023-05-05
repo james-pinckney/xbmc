@@ -68,7 +68,8 @@ BaseYUV2RGBGLSLShader::BaseYUV2RGBGLSLShader(EShaderFormat format,
 
   VertexShader()->LoadSource("gles_yuv2rgb.vert", m_defines);
 
-  CLog::Log(LOGDEBUG, "GLES: BaseYUV2RGBGLSLShader: defines:\n{}", m_defines);
+  CLog::Log(LOGDEBUG, "GLES: using shader format: {}", m_format);
+  CLog::Log(LOGDEBUG, "GLES: using tonemap method: {}", m_toneMappingMethod);
 
   m_convMatrix.SetSourceColorPrimaries(srcPrimaries).SetDestinationColorPrimaries(dstPrimaries);
 }
@@ -199,8 +200,10 @@ void BaseYUV2RGBGLSLShader::SetColParams(AVColorSpace colSpace, int bits, bool l
       .SetSourceTextureBitDepth(textureBits);
 }
 
-void BaseYUV2RGBGLSLShader::SetDisplayMetadata(bool hasDisplayMetadata, AVMasteringDisplayMetadata displayMetadata,
-                                               bool hasLightMetadata, AVContentLightMetadata lightMetadata)
+void BaseYUV2RGBGLSLShader::SetDisplayMetadata(bool hasDisplayMetadata,
+                                               const AVMasteringDisplayMetadata& displayMetadata,
+                                               bool hasLightMetadata,
+                                               AVContentLightMetadata lightMetadata)
 {
   m_hasDisplayMetadata = hasDisplayMetadata;
   m_displayMetadata = displayMetadata;
@@ -268,10 +271,6 @@ YUV2RGBBobShader::YUV2RGBBobShader(EShaderFormat format,
                                    ETONEMAPMETHOD toneMapMethod)
   : BaseYUV2RGBGLSLShader(format, dstPrimaries, srcPrimaries, toneMap, toneMapMethod)
 {
-  m_hStepX = -1;
-  m_hStepY = -1;
-  m_hField = -1;
-
   PixelShader()->LoadSource("gles_yuv2rgb_bob.frag", m_defines);
   PixelShader()->InsertSource("gles_tonemap.frag", "void main()");
 }
